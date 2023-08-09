@@ -6,3 +6,8 @@
 * [pid_command_controller](./pid_command_controller/) - ROS2 control PID command controller
 
 See the readme of each package for more information.
+
+## Installation
+
+* Clone the repository into your ROS2 workspace
+* Build the workspace with `colcon build --symlink-install`
