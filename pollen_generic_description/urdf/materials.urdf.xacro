@@ -4,38 +4,83 @@
 <!-- URDF definition is so stupid we have to do that... -->
 
 <xacro:macro name="reachy_yellow" >
+    <material name="reachy_yellow">
   <color rgba="0.8 0.8 0.0 1"/>
+    </material>
 </xacro:macro>
 
 <xacro:macro name="reachy_grey" >
+<material name="reachy_grey">
   <color rgba="0.8 0.8 0.8 1"/>
+</material>
 </xacro:macro>
 
 <xacro:macro name="torsoblack" >
+    <material name="torsoblack">
   <color rgba="0.5 0.5 0.5 1.0"/>
+    </material>
+
 </xacro:macro>
 
 <xacro:macro name="eyewhite" >
+  <material name="eyewhite">
+
   <color rgba="1.0 1.0 1.0 1.0"/>
+	</material>
+
 </xacro:macro>
 
 
 <xacro:macro name="orbita2dmetal" >
+<material name="orbita2dmetal">
   <color rgba="0.85 0.85 0.85 1.0"/>
+</material>
 </xacro:macro>
 
 
 <xacro:macro name="orbita2dgrey" >
+	<material name="orbita2dgrey">
   <color rgba="0.8 0.8 0.8 1.0"/>
+	</material>
+
 </xacro:macro>
 
 <xacro:macro name="orbita3d_yellow" >
+    <material name="orbita3d_yellow">
   <color rgba="0.8 0.8 0.0 1"/>
+    </material>
 </xacro:macro>
 
 <xacro:macro name="orbita3d_grey" >
+  <material name="orbita3d_grey">
   <color rgba="0.8 0.8 0.8 1"/>
+	</material>
+
 </xacro:macro>
+
+<xacro:macro name="gripperblack" >
+<material name="gripperblack">
+      <color rgba="0.4 0.4 0.4 1"/>
+</material>
+</xacro:macro>
+
+
+<xacro:macro name="gripperwhite" >
+<material name="gripperwhite">
+        <color rgba="0.9 0.9 0.9 1"/>
+</material>
+
+</xacro:macro>
+
+
+
+    <!-- <material name="gripperblack"> -->
+    <!--     <color rgba="0.4 0.4 0.4 1"/> -->
+    <!-- </material> -->
+    <!-- <material name="gripperwhite"> -->
+    <!--     <color rgba="0.9 0.9 0.9 1"/> -->
+    <!-- </material> -->
+
 
 
     <!-- <material name="reachy_yellow"> -->
