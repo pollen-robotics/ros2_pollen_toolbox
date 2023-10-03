@@ -18,5 +18,9 @@ setup(
     description='ROS2 package access of any joint, sensor, gpio state/command interfaces.',
     license='Apache-2.0',
     tests_require=['pytest'],
-    entry_points={},
+    entry_points={
+        'console_scripts': [
+            'dynamic_state_router = dynamic_state_router.dynamic_state_router:main',
+        ],
+    },
 )
