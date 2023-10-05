@@ -42,14 +42,16 @@ class DynamicStateRouterNode(Node):
         super().__init__(node_name=node_name)
         self.logger = self.get_logger()
 
-        self.forward_controllers = ForwardControllersPool.parse(self.logger, controllers_file)
+        self.forward_controllers = ForwardControllersPool.parse(
+            self.logger, controllers_file
+        )
 
         # Subscribe to /dynamic_joint_states
         self.joint_state_ready = Event()
         self.joint_state = {}
         self.joint_state_sub = self.create_subscription(
             msg_type=DynamicJointState,
-            topic='/dynamic_joint_states',
+            topic="/dynamic_joint_states",
             qos_profile=5,
             callback=self.on_dynamic_joint_states,
         )
@@ -63,30 +65,32 @@ class DynamicStateRouterNode(Node):
         self.forward_position_controller_sub = {
             fc.name: self.create_subscription(
                 msg_type=Float64MultiArray,
-                topic=f'/{fc.name}/commands',
+                topic=f"/{fc.name}/commands",
                 qos_profile=5,
-                callback=partial(self.on_forward_position_controller_update, controller_name=fc.name),
+                callback=partial(
+                    self.on_forward_position_controller_update, controller_name=fc.name
+                ),
             )
-            for fc in self.forward_controllers.get_controllers_for_interface('position') 
+            for fc in self.forward_controllers.get_controllers_for_interface("position")
         }
 
         # Now we start our own service, publication and subscription
 
         # SERVICE: /get_dynamic_state (GetDynamicState)
         self.get_dyn_state_service = self.create_service(
-            srv_type=GetDynamicState, 
-            srv_name='/get_dynamic_state',
+            srv_type=GetDynamicState,
+            srv_name="/get_dynamic_state",
             callback=self.get_dyn_state_cb,
         )
 
         # PUBLICATION: /joint_commands (JointState)
         self.joint_commands_pub = self.create_publisher(
             msg_type=JointState,
-            topic='/joint_commands',
+            topic="/joint_commands",
             qos_profile=5,
         )
         self.joint_commands_timer = self.create_timer(
-            timer_period_sec=0.01, 
+            timer_period_sec=0.01,
             callback=self.publish_joint_commands,
         )
 
@@ -102,30 +106,33 @@ class DynamicStateRouterNode(Node):
         self.fc_publisher = {
             fc.name: self.create_publisher(
                 msg_type=Float64MultiArray,
-                topic=f'/{fc.name}/commands',
+                topic=f"/{fc.name}/commands",
                 qos_profile=5,
             )
-            
             for fc in self.forward_controllers.all()
         }
         self.gripper_pub = self.create_publisher(
             msg_type=Gripper,
-            topic='/grippers/commands',
+            topic="/grippers/commands",
             qos_profile=5,
         )
 
         self.joint_command_sub = self.create_subscription(
             msg_type=DynamicJointState,
-            topic='/dynamic_joint_commands',
+            topic="/dynamic_joint_commands",
             qos_profile=5,
             callback=self.on_dynamic_joint_commands,
         )
 
     # Service: GetDynamicState
-    def get_dyn_state_cb(self, request: GetDynamicState.Request, response: GetDynamicState.Response) -> GetDynamicState.Response:
-        """ Conveniant service to get interface values of a single joint/sensor/gpio. """
+    def get_dyn_state_cb(
+        self, request: GetDynamicState.Request, response: GetDynamicState.Response
+    ) -> GetDynamicState.Response:
+        """Conveniant service to get interface values of a single joint/sensor/gpio."""
         if request.name not in self.joint_state.keys():
-            self.logger.warning(f"Name should be one of {list(self.joint_state.keys())} (got '{request.name}' instead)")
+            self.logger.warning(
+                f"Name should be one of {list(self.joint_state.keys())} (got '{request.name}' instead)"
+            )
             return response
 
         response.name = request.name
@@ -144,16 +151,20 @@ class DynamicStateRouterNode(Node):
 
     # Subscription: dynamic_joint_commands (DynamicJointState)
     def on_dynamic_joint_commands(self, command: DynamicJointState):
-        """ Retreive the joint commands from /dynamic_joint_commands."""
+        """Retreive the joint commands from /dynamic_joint_commands."""
         with self.pub_lock:
             for name, iv in zip(command.joint_names, command.interface_values):
                 if name not in self.joint_state:
-                    self.logger.warning(f'Unknown joint "{name}" ({list(self.joint_state.keys())})')
+                    self.logger.warning(
+                        f'Unknown joint "{name}" ({list(self.joint_state.keys())})'
+                    )
                     continue
 
                 for k, v in zip(iv.interface_names, iv.values):
                     if k not in self.joint_state[name]:
-                        self.logger.warning(f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})')
+                        self.logger.warning(
+                            f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})'
+                        )
                         continue
 
                     self.requested_commands[name][k] = v
@@ -173,9 +184,9 @@ class DynamicStateRouterNode(Node):
         msg = JointState()
 
         for j in self.joint_state.values():
-            if 'target_position' in j:
-                msg.name.append(j['name'])
-                msg.position.append(j['target_position'])
+            if "target_position" in j:
+                msg.name.append(j["name"])
+                msg.position.append(j["target_position"])
 
         self.joint_commands_pub.publish(msg)
 
@@ -186,9 +197,9 @@ class DynamicStateRouterNode(Node):
 
         for joint, iv in commands.items():
             for interface, value in iv.items():
-                if joint.endswith('gripper') and interface == 'position':
+                if joint.endswith("gripper") and interface == "position":
                     gripper_commands[joint].update({interface: value})
-                elif interface in ('p_gain', 'i_gain', 'd_gain'):
+                elif interface in ("p_gain", "i_gain", "d_gain"):
                     pid_commands[joint].update({interface: value})
                 else:
                     regular_commands[joint].update({interface: value})
@@ -202,18 +213,20 @@ class DynamicStateRouterNode(Node):
 
         for joint, iv in commands.items():
             for interface, value in iv.items():
-                if interface == 'position':
+                if interface == "position":
                     msg.name.append(joint)
                     msg.opening.append(value)
 
-        self.gripper_pub.publish(msg)  
+        self.gripper_pub.publish(msg)
 
     def handle_pid_commands(self, commands):
-        pid_fc = self.forward_controllers['forward_pid_controller']
+        return
+
+        pid_fc = self.forward_controllers["forward_pid_controller"]
         msg = Float64MultiArray()
 
         for j in pid_fc.joints:
-            for gain in ('p_gain', 'i_gain', 'd_gain'):
+            for gain in ("p_gain", "i_gain", "d_gain"):
                 if j in commands and gain in commands[j]:
                     msg.data.append(commands[j][gain])
                 elif j in self.joint_command and gain in self.joint_command[j]:
@@ -225,20 +238,24 @@ class DynamicStateRouterNode(Node):
             for g, val in gains.items():
                 self.joint_command[j][g] = val
 
-        self.fc_publisher['forward_pid_controller'].publish(msg)
+        self.fc_publisher["forward_pid_controller"].publish(msg)
 
-    def handle_regular_commands(self, commands): 
+    def handle_regular_commands(self, commands):
         # Group commands by forward controller
         to_pub = defaultdict(dict)
         for joint, iv in commands.items():
             for interface, value in iv.items():
-                fc = self.forward_controllers.get_corresponding_controller(joint, interface)
+                fc = self.forward_controllers.get_corresponding_controller(
+                    joint, interface
+                )
                 to_pub[fc][joint] = value
 
         for fc, new_cmd in to_pub.items():
             msg = Float64MultiArray()
-            
-            pub_interface = fc.interface if fc.interface != 'position' else 'target_position'
+
+            pub_interface = (
+                fc.interface if fc.interface != "position" else "target_position"
+            )
 
             msg.data = []
             for j in fc.joints:
@@ -253,59 +270,62 @@ class DynamicStateRouterNode(Node):
                 self.joint_command[j][pub_interface] = val
 
             self.fc_publisher[fc.name].publish(msg)
-                
 
     # Internal ROS2 subscription
     # Subscription: DynamicJointState cb
     def on_dynamic_joint_states(self, state: DynamicJointState):
-        """ Retreive the joint state from /dynamic_joint_states."""
+        """Retreive the joint state from /dynamic_joint_states."""
         if not self.joint_state_ready.is_set():
             for uid, name in enumerate(state.joint_names):
                 self.joint_state[name] = {}
-                self.joint_state[name]['name'] = name
-                self.joint_state[name]['uid'] = uid
+                self.joint_state[name]["name"] = name
+                self.joint_state[name]["uid"] = uid
 
                 self.joint_command[name] = {}
 
-        for uid, (name, kv) in enumerate(zip(state.joint_names, state.interface_values)):
+        for uid, (name, kv) in enumerate(
+            zip(state.joint_names, state.interface_values)
+        ):
             for k, v in zip(kv.interface_names, kv.values):
                 self.joint_state[name][k] = v
 
         if not self.joint_state_ready.is_set():
             for name, state in self.joint_state.items():
-                if 'position' in state:
-                    state['target_position'] = state['position']
+                if "position" in state:
+                    state["target_position"] = state["position"]
 
             self.joint_state_ready.set()
-        
-    def on_forward_position_controller_update(self, msg: Float64MultiArray, controller_name: str):
+
+    def on_forward_position_controller_update(
+        self, msg: Float64MultiArray, controller_name: str
+    ):
         fc = self.forward_controllers[controller_name]
 
         for j, v in zip(fc.joints, msg.data):
-            self.joint_state[j]['target_position'] = v
+            self.joint_state[j]["target_position"] = v
 
     def wait_for_setup(self):
         while not self.joint_state_ready.is_set():
-            self.logger.info('Waiting for /dynamic_joint_states...')
+            self.logger.info("Waiting for /dynamic_joint_states...")
             rclpy.spin_once(self)
-        self.logger.info('Setup done!')
+        self.logger.info("Setup done!")
 
 
 def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ros-args', action='store_true')
-    parser.add_argument('controllers_file')
+    parser.add_argument("--ros-args", action="store_true")
+    parser.add_argument("controllers_file")
     args = parser.parse_args()
 
     rclpy.init()
     node = DynamicStateRouterNode(
-        node_name='dynanic_state_router_node',
+        node_name="dynanic_state_router_node",
         controllers_file=args.controllers_file,
     )
     rclpy.spin(node)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
