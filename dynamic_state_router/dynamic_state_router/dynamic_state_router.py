@@ -4,7 +4,7 @@ High-level ROS interface on top of ROS2 control.
 It lets you easily set a command interfaces for a single joint of a forward controller. 
 
 Service:
-- /get_dynamic_state (GetDynamicState) - retrieve any state(s) interface(s) for a specific joint/sensor/gpio
+- /get_dynamic_state (GetDynamicState) - retrieve any state(s) interface(s) for a specific joint/sensor/gpio (leave interfaces empty to get all)
 
 Publication:
 - /joint_commands (JointState) for each joints (100Hz)
@@ -136,16 +136,25 @@ class DynamicStateRouterNode(Node):
             return response
 
         response.name = request.name
-        for interface in request.interfaces:
-            joint = self.joint_state[request.name]
 
-            if interface not in joint:
-                possible_interfaces = list(joint.keys())
-                self.logger.warning(f"Interface should be one of {possible_interfaces} (got '{interface}' instead)")
-                continue
+        joint = self.joint_state[request.name]
+        possible_interfaces = list(joint.keys())
+        possible_interfaces.remove("name")
 
-            response.interfaces.append(interface)
-            response.values.append(joint[interface])
+        if request.interfaces == []:
+            for interface in possible_interfaces:
+                response.interfaces.append(interface)
+                response.values.append(joint[interface])
+        else:
+            for interface in request.interfaces:
+                if interface not in joint:
+                    self.logger.warning(
+                        f"Interface should be one of {possible_interfaces} (got '{interface}' instead)"
+                    )
+                    continue
+
+                response.interfaces.append(interface)
+                response.values.append(joint[interface])
 
         return response
 

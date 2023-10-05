@@ -8,7 +8,7 @@ To do that, this node uses the controller file as a parameter.
 In more details, this node exposes:
 
 A new service:
-- /get_dynamic_state (pollen_msgs/GetDynamicState) - retrieve any state(s) interface(s) for a specific joint/sensor/gpio
+- /get_dynamic_state (pollen_msgs/GetDynamicState) - retrieve any state(s) interface(s) for a specific joint/sensor/gpio (leave interface empty to retrieve all interfaces)
 
 A new subscription to the topic:
 - /dynamic_joint_commands (control_msgs/DynamicJointState) - set any command(s) interface(s) for one or many joint/sensor/gpio
