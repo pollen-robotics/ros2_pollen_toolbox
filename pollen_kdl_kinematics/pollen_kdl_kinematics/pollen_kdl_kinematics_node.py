@@ -368,7 +368,7 @@ class PollenKdlKinematics(LifecycleNode):
 
 def main():
     rclpy.init()
-    node = ReachyKdlKinematics()
+    node = PollenKdlKinematics()
     rclpy.spin(node)
 
 
