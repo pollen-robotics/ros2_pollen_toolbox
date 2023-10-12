@@ -260,9 +260,15 @@ class DynamicStateRouterNode(Node):
         to_pub = defaultdict(dict)
         for joint, iv in commands.items():
             for interface, value in iv.items():
-                fc = self.forward_controllers.get_corresponding_controller(
-                    joint, interface
-                )
+                try:
+                    fc = self.forward_controllers.get_corresponding_controller(
+                        joint, interface
+                    )
+                except KeyError:
+                    self.logger.error(
+                        f"Unknown interface '{interface}' for joint '{joint}'"
+                    )
+                    continue
                 to_pub[fc][joint] = value
 
         for fc, new_cmd in to_pub.items():
