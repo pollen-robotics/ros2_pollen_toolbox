@@ -124,6 +124,12 @@ class DynamicStateRouterNode(Node):
             callback=self.on_dynamic_joint_commands,
         )
 
+        # We are ready to go! Log, current config
+        self.logger.info("DynamicStateRouterNode setup:")
+        for fc in self.forward_controllers.all():
+            self.logger.info(f"\t- {fc.name}: {fc.joints} ({fc.interface})")
+        self.logger.info("DynamicStateRouterNode ready!")
+
     # Service: GetDynamicState
     def get_dyn_state_cb(
         self, request: GetDynamicState.Request, response: GetDynamicState.Response
