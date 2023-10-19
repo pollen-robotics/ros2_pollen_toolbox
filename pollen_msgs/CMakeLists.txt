@@ -19,6 +19,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Gripper.msg"
 
   "srv/GetDynamicState.srv"
+  "srv/GetForwardKinematics.srv"
+  "srv/GetInverseKinematics.srv"
 
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs
 )
