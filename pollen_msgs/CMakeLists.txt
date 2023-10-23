@@ -16,13 +16,28 @@ find_package(std_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/GraspPoseArray.msg"
   "msg/Gripper.msg"
+  "msg/ReachableGraspTriplet.msg"
+  "msg/GraspPose.msg"
+  "msg/ReachableGraspTripletArray.msg"
 
   "srv/GetDynamicState.srv"
-  "srv/GetForwardKinematics.srv"
   "srv/GetInverseKinematics.srv"
+  "srv/GetReachableGraspTriplets.srv"
+  "srv/GetForwardKinematics.srv"
+  "srv/GetObjectDetection.srv"
+  "srv/GetSimpleGraspPose.srv"
+  "srv/GetGraspCNN.srv"
+  "srv/GetReachability.srv"
+  
+  "action/GotoTrajectory.action"
 
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs
 )
 
 ament_package()
+
+
+
+
