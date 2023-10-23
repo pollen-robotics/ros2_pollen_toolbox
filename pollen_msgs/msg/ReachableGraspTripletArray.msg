@@ -1,2 +1,2 @@
 
-reachy_msgs/ReachableGraspTriplet[] reachable_grasp_triplets
+pollen_msgs/ReachableGraspTriplet[] reachable_grasp_triplets

@@ -1,2 +1,2 @@
 
-reachy_msgs/GraspPose[] grasp_poses
+pollen_msgs/GraspPose[] grasp_poses

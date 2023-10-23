@@ -1,5 +1,5 @@
 trajectory_msgs/JointTrajectory trajectory
 ---
-reachy_msgs/TrajectoryResult result
+pollen_msgs/TrajectoryResult result
 ---
-reachy_msgs/TrajectoryFeedback feedback
+pollen_msgs/TrajectoryFeedback feedback
