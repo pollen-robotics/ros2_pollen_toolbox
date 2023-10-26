@@ -63,7 +63,7 @@ class PollenPlacoKinematics(LifecycleNode):
         # Removing URDF tags that Placo does not support
         new_urdf = copy.copy(self.urdf)
         new_urdf = remove_ros2_control_tags(new_urdf)
-        new_urdf = fix_arm_tip_names(new_urdf)
+        # new_urdf = fix_arm_tip_names(new_urdf)
         
         # f = open("/tmp/reachy2.urdf", "w")
         # f.write(new_urdf)
