@@ -90,7 +90,7 @@ class DynamicStateRouterNode(Node):
             qos_profile=5,
         )
         self.joint_commands_timer = self.create_timer(
-            timer_period_sec=0.01,
+            timer_period_sec=0.005,
             callback=self.publish_joint_commands,
         )
 
