@@ -13,16 +13,36 @@ find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
+find_package(vision_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Gripper.msg"
+  "msg/ReachableGraspTriplet.msg"
+  "msg/GraspPose.msg"
+  "msg/ReachableGraspTripletArray.msg"
+  "msg/GraspPoseArray.msg"
+  "msg/TrajectoryResult.msg"
+  "msg/TrajectoryFeedback.msg"
+
+  "action/GotoTrajectory.action"
 
   "srv/GetDynamicState.srv"
-  "srv/GetForwardKinematics.srv"
   "srv/GetInverseKinematics.srv"
+  "srv/GetReachableGraspTriplets.srv"
+  "srv/GetForwardKinematics.srv"
+  "srv/GetObjectDetection.srv"
+  "srv/GetSimpleGraspPose.srv"
+  "srv/GetGraspCNN.srv"
+  "srv/GetReachability.srv"
+  
 
-  DEPENDENCIES geometry_msgs sensor_msgs std_msgs
+  DEPENDENCIES geometry_msgs sensor_msgs std_msgs trajectory_msgs vision_msgs
 )
 
 ament_package()
+
+
+
+
