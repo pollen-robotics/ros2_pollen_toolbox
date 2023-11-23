@@ -1,10 +1,13 @@
 from functools import partial
 from threading import Event
 from typing import List
+import time
 
 import numpy as np
 
 from scipy.spatial.transform import Rotation
+from scipy.interpolate import UnivariateSpline
+
 
 from .pose_averager import PoseAverager
 
@@ -26,6 +29,9 @@ from .kdl_kinematics import (
     inverse_kinematics,
     ros_pose_to_matrix,
 )
+
+
+from collections import deque
 
 
 class PollenKdlKinematics(LifecycleNode):
@@ -52,6 +58,26 @@ class PollenKdlKinematics(LifecycleNode):
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
+        self.forward_kinematics_pub = {}
+
+        self.bob = {
+            'present': [],
+            'target_brute': [],
+            'target_smooth': [],
+        }
+
+        self.mathieu = {
+            't': {
+                'r_arm': deque(maxlen=30),
+                'l_arm': deque(maxlen=30),
+                'head': deque(maxlen=30),
+            },
+            'target': {
+                'r_arm': deque(maxlen=30),
+                'l_arm': deque(maxlen=30),
+                'head': deque(maxlen=30),
+            }
+        }
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
@@ -89,6 +115,7 @@ class PollenKdlKinematics(LifecycleNode):
                     topic=f"/{arm}_forward_position_controller/commands",
                     qos_profile=5,
                 )
+                self.forward_kinematics_pub[arm] = forward_position_pub
 
                 self.target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
@@ -118,7 +145,7 @@ class PollenKdlKinematics(LifecycleNode):
                         forward_publisher=forward_position_pub,
                     ),
                 )
-                self.averaged_pose[arm] = PoseAverager(window_length=1)
+                self.averaged_pose[arm] = PoseAverager(window_length=15)
                 self.max_joint_vel[arm] = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
                 self.logger.info(
                     f'Adding subscription on "{self.target_sub[arm].topic}"...'
@@ -167,6 +194,7 @@ class PollenKdlKinematics(LifecycleNode):
                 topic="/neck_forward_position_controller/commands",  # need
                 qos_profile=5,
             )
+            self.forward_kinematics_pub["head"] = head_forward_position_pub
 
             sub = self.create_subscription(
                 msg_type=PoseStamped,
@@ -196,7 +224,7 @@ class PollenKdlKinematics(LifecycleNode):
                 ),
             )
             self.averaged_target_sub["head"] = sub
-            self.averaged_pose["head"] = PoseAverager(window_length=1)
+            self.averaged_pose["head"] = PoseAverager(window_length=15)
 
             self.max_joint_vel["head"] = np.array([0.1, 0.1, 0.1])
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
@@ -205,8 +233,93 @@ class PollenKdlKinematics(LifecycleNode):
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
 
+
+        self.t0 = time.time()
+        self.create_timer(1 / 150, self.on_pub_target)
+
+        #self.create_timer(10, self.save)
+
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
+
+    # def save(self):
+    #     self.logger.info("Saving bob")
+
+    #     import datetime
+    #     date = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    #     if len(self.bob['target_brute']):
+    #         f = f'/tmp/bob-{date}.npz'
+    #         self.logger.info(f"Saving bob to {f}")
+    #         np.savez(f, **self.bob)
+
+    def smooth(self, t, data, autre_t):
+        data = np.array(data)
+        N = data.shape[-1]
+
+        res = []
+        for j in range(N):
+            spline = UnivariateSpline(t, data[:, j], s=10, k=5)
+            res.append(spline(autre_t))
+
+        return res
+
+    def on_pub_target(self):
+        for name in ["l_arm", "r_arm", "head"]:
+            if len(self.mathieu['t'][name]) < 30:
+                continue
+            # if not len(self.averaged_pose[name].x):
+            #     continue
+
+            t = time.time() - self.t0 - 0.1
+
+            if t > self.mathieu['t'][name][-1]:
+                self.mathieu['t'][name].clear()
+                self.mathieu['target'][name].clear()
+                continue
+
+            sol = self.smooth(
+                self.mathieu['t'][name], 
+                self.mathieu['target'][name], 
+                t,
+            )
+            sol = np.array(sol).tolist()
+            # sol = self.mathieu['target'][name][-1]
+            # self.logger.error(f"SALUT {sol}")
+
+            # avg_pose = self.averaged_pose[name].mean()
+            # M = ros_pose_to_matrix(avg_pose)
+
+            # q0 = {
+            #     "l_arm": [0, 0, 0, -np.pi / 2, 0, 0, 0],
+            #     "r_arm": [0, 0, 0, -np.pi / 2, 0, 0, 0],
+            #     "head": [0, 0, 0],
+            # }
+
+            # error, sol = inverse_kinematics(
+            #     self.ik_solver[name],
+            #     q0=q0[name],
+            #     target_pose=M,
+            #     nb_joints=self.chain[name].getNrOfJoints(),
+            # )
+
+            msg = Float64MultiArray()
+            msg.data = sol
+            self.forward_kinematics_pub[name].publish(msg)
+
+            # if name == "r_arm":
+            #     self.bob['present'].append(self.get_current_position(self.chain[name]))
+            #     self.bob['target_smooth'].append(sol)
+
+            #     pose = self.averaged_pose[name].last()
+            #     M = ros_pose_to_matrix(pose)
+            #     error, sol = inverse_kinematics(
+            #         self.ik_solver[name],
+            #         q0=q0[name],
+            #         target_pose=M,
+            #         nb_joints=self.chain[name].getNrOfJoints(),
+            #     )
+            #     self.bob['target_brute'].append(sol)
+
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
@@ -293,31 +406,49 @@ class PollenKdlKinematics(LifecycleNode):
         forward_publisher.publish(msg)
 
     def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
-        self.averaged_pose[name].append(msg.pose)
-        avg_pose = self.averaged_pose[name].mean()
-
-        M = ros_pose_to_matrix(avg_pose)
+        M = ros_pose_to_matrix(msg.pose)
+        q0 = {
+            "l_arm": [0, 0, 0, -np.pi / 2, 0, 0, 0],
+            "r_arm": [0, 0, 0, -np.pi / 2, 0, 0, 0],
+            "head": [0, 0, 0],
+        }
 
         error, sol = inverse_kinematics(
             self.ik_solver[name],
-            q0=q0,
+            q0=q0[name],
             target_pose=M,
             nb_joints=self.chain[name].getNrOfJoints(),
         )
 
-        # TODO: check error
+        import time
+        self.mathieu['t'][name].append(time.time() - self.t0)
+        self.mathieu['target'][name].append(sol)
 
-        current_position = np.array(self.get_current_position(self.chain[name]))
+        # self.averaged_pose[name].append(msg.pose)
+        # avg_pose = self.averaged_pose[name].mean()
 
-        vel = np.array(sol) - current_position
-        # vel = np.clip(vel, -self.max_joint_vel[name], self.max_joint_vel[name])
+        # M = ros_pose_to_matrix(avg_pose)
 
-        smoothed_sol = current_position + vel
+        # error, sol = inverse_kinematics(
+        #     self.ik_solver[name],
+        #     q0=q0,
+        #     target_pose=M,
+        #     nb_joints=self.chain[name].getNrOfJoints(),
+        # )
 
-        msg = Float64MultiArray()
-        msg.data = smoothed_sol.tolist()
+        # # TODO: check error
 
-        forward_publisher.publish(msg)
+        # current_position = np.array(self.get_current_position(self.chain[name]))
+
+        # vel = np.array(sol) - current_position
+        # # vel = np.clip(vel, -self.max_joint_vel[name], self.max_joint_vel[name])
+
+        # smoothed_sol = current_position + vel
+
+        # msg = Float64MultiArray()
+        # msg.data = smoothed_sol.tolist()
+
+        # forward_publisher.publish(msg)
 
     def get_current_position(self, chain) -> List[float]:
         joints = self.get_chain_joints_name(chain)
@@ -334,7 +465,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.joint_state_ready.set()
 
-    def retrieve_urdf(self, timeout_sec: float = 15):
+    def retrieve_urdf(self, timeout_sec: float = 30):
         self.logger.info('Retrieving URDF from "/robot_description"...')
 
         qos_profile = QoSProfile(depth=1)

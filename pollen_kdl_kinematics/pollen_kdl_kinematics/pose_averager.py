@@ -24,6 +24,20 @@ class PoseAverager:
             pose.orientation.w,
         ])
 
+    def last(self) -> Pose:
+        pose = Pose()
+
+        pose.position.x = self.x[-1]
+        pose.position.y = self.y[-1]
+        pose.position.z = self.z[-1]
+
+        pose.orientation.x = self.q[-1][0]
+        pose.orientation.y = self.q[-1][1]
+        pose.orientation.z = self.q[-1][2]
+        pose.orientation.w = self.q[-1][3]
+
+        return pose
+
     def mean(self) -> Pose:
         pose = Pose()
 
