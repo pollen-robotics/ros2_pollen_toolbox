@@ -65,6 +65,8 @@ class ForwardControllersPool:
 
             controller_config = config["controller_manager"]["ros__parameters"]
 
+            freq = controller_config["update_rate"]
+
             forward_controllers = []
             for k, v in controller_config.items():
                 try:
@@ -83,4 +85,4 @@ class ForwardControllersPool:
 
                 fcs.append(fc)
 
-        return cls(fcs=fcs)
+        return freq, cls(fcs=fcs)
