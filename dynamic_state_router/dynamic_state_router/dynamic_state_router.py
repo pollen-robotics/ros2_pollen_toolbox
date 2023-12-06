@@ -7,7 +7,7 @@ Service:
 - /get_dynamic_state (GetDynamicState) - retrieve any state(s) interface(s) for a specific joint/sensor/gpio (leave interfaces empty to get all)
 
 Publication:
-- /joint_commands (JointState) for each joints (100Hz)
+- /joint_commands (JointState) for each joints (match ros2 controllers frequency)
 
 Subscription:
 - /dynamic_joint_commands (DynamicJointState) - set any command(s) interface(s) for one or many joint/sensor/gpio
@@ -42,7 +42,7 @@ class DynamicStateRouterNode(Node):
         super().__init__(node_name=node_name)
         self.logger = self.get_logger()
 
-        self.forward_controllers = ForwardControllersPool.parse(
+        self.freq, self.forward_controllers = ForwardControllersPool.parse(
             self.logger, controllers_file
         )
 
@@ -90,7 +90,7 @@ class DynamicStateRouterNode(Node):
             qos_profile=5,
         )
         self.joint_commands_timer = self.create_timer(
-            timer_period_sec=0.005,
+            timer_period_sec=1 / self.freq,
             callback=self.publish_joint_commands,
         )
 
