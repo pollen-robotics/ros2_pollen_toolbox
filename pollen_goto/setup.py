@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = "reachy_trajectory"
+package_name = "pollen_goto"
 
 setup(
     name=package_name,
@@ -18,6 +18,9 @@ setup(
     license="TODO: License declaration",
     tests_require=["pytest"],
     entry_points={
-        "console_scripts": ["goto = reachy_trajectory.goto_action_node:main"],
+        "console_scripts": [
+            "goto_server = pollen_goto.goto_action_server:main",
+            "goto_client_test = pollen_goto.goto_action_client:main",
+        ],
     },
 )

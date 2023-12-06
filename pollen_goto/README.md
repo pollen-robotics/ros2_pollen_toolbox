@@ -6,7 +6,7 @@
 
 ## Examples
 
-`ros2 run reachy_trajectory goto`
+`ros2 run pollen_goto goto`
 
 `ros2 action send_goal /right_arm_goto pollen_msgs/action/GotoTrajectory "{ trajectory: { joint_names: [r_shoulder_pitch], points: [ {positions: [-1], time_from_start: {sec: 2}} ] } }" --feedback`
 
@@ -21,11 +21,11 @@ ros2 launch reachy_bringup reachy.launch.py  fake:=true start_rviz:=true start_s
 ```
 
 ```
-ros2 run reachy_trajectory goto
+ros2 run pollen_goto goto
 ```
 
 ```
-cd ~/reachy_ws/src/pollen_grasping/reachy_trajectory/scripts
+cd ~/reachy_ws/src/pollen_grasping/pollen_goto/scripts
 python3 test_client_new.py
 ```
 
