@@ -223,6 +223,7 @@ class GotoActionServer(Node):
             if commands_sent % self.nb_commands_per_feedback == 0:
                 feedback_msg = Goto.Feedback()
                 feedback_msg.feedback.status = "running"
+                feedback_msg.feedback.commands_sent = commands_sent
                 feedback_msg.feedback.time_to_completion = duration - elapsed_time
                 goal_handle.publish_feedback(feedback_msg)
             rate.sleep()

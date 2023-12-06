@@ -1,17 +1,21 @@
+import rclpy
 import asyncio
+import numpy as np
 
 from action_msgs.msg import GoalStatus
-from trajectory_msgs.msg import JointTrajectoryPoint
 
 from pollen_msgs.action import Goto
 from sensor_msgs.msg import JointState
 
 
-import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from typing import List
-import time
+
+from pollen_msgs.srv import GetInverseKinematics
+from pollen_msgs.srv import GetDynamicState
+from reachy_sdk_server.conversion import matrix_to_pose, pose_to_matrix
+from typing import Tuple
 
 
 class GotoActionClient(Node):
@@ -24,10 +28,20 @@ class GotoActionClient(Node):
             self.get_logger().info(f"Waiting for action server {prefix}_goto...")
             self.goto_action_client[prefix].wait_for_server()
 
+        self.inverse_kinematics_clients = {}
+        # For testing purposes only, IK services:
+        self.inverse_kinematics_clients["r_arm"] = self.create_client(
+            srv_type=GetInverseKinematics,
+            srv_name=f"/r_arm/inverse_kinematics",
+        )
+        self.inverse_kinematics_clients["l_arm"] = self.create_client(
+            srv_type=GetInverseKinematics,
+            srv_name=f"/l_arm/inverse_kinematics",
+        )
+
     def feedback_callback(self, feedback):
-        self.get_logger().info("FEEDBAAAAACK")
         self.get_logger().info(
-            f"Received feedback. status: {feedback.feedback.feedback.status}, time to completion: {feedback.feedback.feedback.time_to_completion}"
+            f"Received feedback. status: {feedback.feedback.feedback.status}, time to completion: {feedback.feedback.feedback.time_to_completion}, commands_sent {feedback.feedback.feedback.commands_sent}"
         )
 
     async def send_goal(
@@ -42,7 +56,8 @@ class GotoActionClient(Node):
         request = goal_msg.request  # This is of type pollen_msgs/GotoRequest
 
         request.duration = duration
-        request.mode = "linear"
+        # request.mode = "linear"
+        request.mode = "minimum_jerk"
         request.sampling_freq = 150.0
         request.safety_on = False
 
@@ -205,6 +220,35 @@ async def non_blocking_demo_delay(action_client, loop):
         logger.info("result {} and status flag {}".format(*task.result()))
 
 
+async def square_demo(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
+    logger.info(f"$$$$$$ EXAMPLE 4: complete IK calls")
+
+    r_square = [
+        [7.53, -22.16, -30.57, -69.92, 14.82, 20.59, 18.28],
+        [-6.43, -34.65, -46.71, -109.05, 42.49, -28.29, 45.83],
+        [-22.53, 5.92, 2.71, -123.43, -31.76, -50.2, -30.13],
+        [2.66, 6.08, -1.9, -83.19, -12.97, 10.76, -3.67],
+        [0, 0, 0, 0, 0, 0, 0],
+    ]
+
+    joint_names = [
+        "r_shoulder_pitch",
+        "r_shoulder_roll",
+        "r_elbow_yaw",
+        "r_elbow_pitch",
+        "r_wrist_roll",
+        "r_wrist_pitch",
+        "r_wrist_yaw",
+    ]
+
+    for p in r_square:
+        # Setting values of p to radians
+        p = [np.deg2rad(i) for i in p]
+        result, status = await action_client.send_goal("r_arm", joint_names, p, 2.0)
+        logger.info(f"result {result} and status flag {status}")
+
+
 async def run_demo(args, loop):
     logger = rclpy.logging.get_logger("goto_action_client")
 
@@ -225,6 +269,9 @@ async def run_demo(args, loop):
 
     # Demo 3: non-blocking calls called with a delay
     await non_blocking_demo_delay(action_client, loop)
+
+    # Demo 4: square
+    await square_demo(action_client, loop)
 
     # cancel spinning task
     spin_task.cancel()
