@@ -27,8 +27,8 @@ class State(Enum):
 
 
 class GotoActionServer(Node):
-    def __init__(self):
-        super().__init__("goto_action_server")
+    def __init__(self, name_prefix):
+        super().__init__(f"{name_prefix}_goto_action_server")
 
         self._goal_queue = collections.deque()
         self._goal_queue_lock = threading.Lock()
@@ -37,7 +37,7 @@ class GotoActionServer(Node):
         self._action_server = ActionServer(
             self,
             GotoTrajectory,
-            "pollen_goto",
+            f"{name_prefix}_goto",
             handle_accepted_callback=self.handle_accepted_callback,
             execute_callback=self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
@@ -95,7 +95,9 @@ class GotoActionServer(Node):
         # TODO CHECK
         traj = goal_request.trajectory
         if len(traj.joint_names) < 1 or (len(traj.joint_names) != len(traj.points)):
-            self.get_logger().error(f"Invalid goal")
+            self.get_logger().error(
+                f"Invalid goal. Nb joint names={len(traj.joint_names)}, nb points={len(traj.points)}"
+            )
             return GoalResponse.REJECT
 
         return GoalResponse.ACCEPT
@@ -309,7 +311,7 @@ class GotoActionServer(Node):
                     self._current_goal = None
 
 
-def main(args=None):
+def main_old(args=None):
     rclpy.init(args=args)
 
     goto_action_server = GotoActionServer()
@@ -321,6 +323,30 @@ def main(args=None):
 
     goto_action_server.destroy()
     rclpy.shutdown()
+
+
+def main(args=None):
+    # Same as main but creating 2 nodes
+    rclpy.init(args=args)
+    r_arm_goto_action_server = GotoActionServer("r_arm")
+    l_arm_goto_action_server = GotoActionServer("l_arm")
+    neck_goto_action_server = GotoActionServer("neck")
+    mult_executor = MultiThreadedExecutor()
+    mult_executor.add_node(r_arm_goto_action_server)
+    mult_executor.add_node(l_arm_goto_action_server)
+    mult_executor.add_node(neck_goto_action_server)
+    executor_thread = threading.Thread(target=mult_executor.spin, daemon=True)
+    executor_thread.start()
+    rate = r_arm_goto_action_server.create_rate(2)
+
+    try:
+        while rclpy.ok():
+            print("Help me body, you are my only hope")
+            rate.sleep()
+    except KeyboardInterrupt:
+        pass
+    rclpy.shutdown()
+    executor_thread.join()
 
 
 if __name__ == "__main__":
