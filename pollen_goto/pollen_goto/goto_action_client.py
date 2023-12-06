@@ -75,37 +75,40 @@ async def spinning(node):
         await asyncio.sleep(0.001)
 
 
-async def run(args, loop):
-    logger = rclpy.logging.get_logger("minimal_action_client")
-
-    # init ros2
-    rclpy.init(args=args)
-
-    # create node
-    action_client = GotoActionClient()
-
-    # start spinning
-    spin_task = loop.create_task(spinning(action_client))
+async def blocking_demo(action_client):
+    logger = rclpy.logging.get_logger("goto_action_client")
 
     logger.info(f"$$$$$$ EXAMPLE 1: blocking calls")
-    result, status = await loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 2.0)
+    result, status = await action_client.send_goal(
+        "r_arm", ["r_shoulder_pitch"], [-1.0], 2.0
     )
     logger.info(f"A) result {result} and status flag {status}")
-    result, status = await loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0)
+
+    result, status = await action_client.send_goal(
+        "l_arm", ["l_shoulder_pitch"], [-1.0], 2.0
     )
     logger.info(f"B) result {result} and status flag {status}")
 
+    result, status = await action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
+    logger.info(f"C) result {result} and status flag {status}")
+
     logger.info(f"$$$$$$ EXAMPLE 1: going back to start position")
-    result, status = await loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0)
+    result, status = await action_client.send_goal(
+        "r_arm", ["r_shoulder_pitch"], [0.0], 2.0
     )
     logger.info(f"A) result {result} and status flag {status}")
-    result, status = await loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0)
+
+    result, status = await action_client.send_goal(
+        "l_arm", ["l_shoulder_pitch"], [0.0], 2.0
     )
     logger.info(f"B) result {result} and status flag {status}")
+
+    result, status = await action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
+    logger.info(f"C) result {result} and status flag {status}")
+
+
+async def non_blocking_demo(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
 
     logger.info(f"$$$$$$ EXAMPLE 2: simultaneous async calls")
     my_task1 = loop.create_task(
@@ -114,9 +117,12 @@ async def run(args, loop):
     my_task2 = loop.create_task(
         action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0)
     )
+    my_task3 = loop.create_task(
+        action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
+    )
     logger.info(f"Gluing tasks and waiting")
 
-    wait_future = asyncio.wait([my_task1, my_task2])
+    wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
@@ -129,14 +135,20 @@ async def run(args, loop):
     my_task2 = loop.create_task(
         action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0)
     )
+    my_task3 = loop.create_task(
+        action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
+    )
     logger.info(f"Gluing tasks and waiting")
-    wait_future = asyncio.wait([my_task1, my_task2])
+    wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
         logger.info("result {} and status flag {}".format(*task.result()))
 
+
+async def non_blocking_demo_delay(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
     logger.info(f"$$$$$$ EXAMPLE 3: delayed async calls")
     # execute goal request and schedule in loop
     logger.info(f"Creating task1")
@@ -148,8 +160,13 @@ async def run(args, loop):
     my_task2 = loop.create_task(
         action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0)
     )
+    await asyncio.sleep(0.5)
+    logger.info(f"Creating task3")
+    my_task3 = loop.create_task(
+        action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
+    )
     logger.info(f"Gluing tasks and waiting")
-    wait_future = asyncio.wait([my_task1, my_task2])
+    wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
@@ -161,17 +178,43 @@ async def run(args, loop):
         action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0)
     )
     await asyncio.sleep(0.5)
-
     my_task2 = loop.create_task(
         action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0)
     )
+    await asyncio.sleep(0.5)
+    logger.info(f"Creating task3")
+    my_task3 = loop.create_task(
+        action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
+    )
     logger.info(f"Gluing tasks and waiting")
-    wait_future = asyncio.wait([my_task1, my_task2])
+    wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
         logger.info("result {} and status flag {}".format(*task.result()))
+
+
+async def run_demo(args, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
+
+    # init ros2
+    rclpy.init(args=args)
+
+    # create node
+    action_client = GotoActionClient()
+
+    # start spinning
+    spin_task = loop.create_task(spinning(action_client))
+
+    # Demo 1: blocking calls
+    await blocking_demo(action_client)
+
+    # Demo 2: non-blocking calls called simultaneously
+    await non_blocking_demo(action_client, loop)
+
+    # Demo 3: non-blocking calls called with a delay
+    await non_blocking_demo_delay(action_client, loop)
 
     # cancel spinning task
     spin_task.cancel()
@@ -184,7 +227,7 @@ async def run(args, loop):
 
 def main(args=None):
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(run(args, loop=loop))
+    loop.run_until_complete(run_demo(args, loop=loop))
 
 
 if __name__ == "__main__":

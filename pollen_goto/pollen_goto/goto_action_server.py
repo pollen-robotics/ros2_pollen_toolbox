@@ -311,20 +311,6 @@ class GotoActionServer(Node):
                     self._current_goal = None
 
 
-def main_old(args=None):
-    rclpy.init(args=args)
-
-    goto_action_server = GotoActionServer()
-
-    # Use a MultiThreadedExecutor to enable processing goals concurrently
-    executor = MultiThreadedExecutor()
-
-    rclpy.spin(goto_action_server, executor=executor)
-
-    goto_action_server.destroy()
-    rclpy.shutdown()
-
-
 def main(args=None):
     # Same as main but creating 2 nodes
     rclpy.init(args=args)
@@ -337,11 +323,10 @@ def main(args=None):
     mult_executor.add_node(neck_goto_action_server)
     executor_thread = threading.Thread(target=mult_executor.spin, daemon=True)
     executor_thread.start()
-    rate = r_arm_goto_action_server.create_rate(2)
+    rate = r_arm_goto_action_server.create_rate(0.5)
 
     try:
         while rclpy.ok():
-            print("Help me body, you are my only hope")
             rate.sleep()
     except KeyboardInterrupt:
         pass
