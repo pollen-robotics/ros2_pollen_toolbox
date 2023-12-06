@@ -1,6 +1,6 @@
 std_msgs/Header header
 
-# status of the current action. Currenly: "running" or "safety"
+# status of the current action. Currently: "running" or "safety"
 string status
 
 # remaining time until completion in seconds

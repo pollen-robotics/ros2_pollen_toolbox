@@ -1,3 +1,3 @@
 std_msgs/Header header
-# Currently: "finished" or "failed"
+# Currently: "finished" or "canceled" or "failed"
 string status

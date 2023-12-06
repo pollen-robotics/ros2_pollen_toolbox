@@ -1,8 +1,4 @@
-import time
-
-
-from pollen_msgs.action import GotoTrajectory
-from pollen_msgs.msg import TrajectoryFeedback, TrajectoryResult
+from pollen_msgs.action import Goto
 from control_msgs.msg import DynamicJointState, InterfaceValue
 
 import rclpy
@@ -16,7 +12,6 @@ from enum import Enum
 from threading import Event
 import threading
 import numpy as np
-from functools import partial
 import collections
 
 
@@ -36,7 +31,7 @@ class GotoActionServer(Node):
 
         self._action_server = ActionServer(
             self,
-            GotoTrajectory,
+            Goto,
             f"{name_prefix}_goto",
             handle_accepted_callback=self.handle_accepted_callback,
             execute_callback=self.execute_callback,
@@ -61,11 +56,14 @@ class GotoActionServer(Node):
         )
 
         self.state = State.READY
+        # Not sending the feedback every tick
+        self.nb_commands_per_feedback = 10
         self.get_logger().info("Goto action server init.")
 
     def on_dynamic_joint_states(self, state: DynamicJointState):
         """Retreive the joint state from /dynamic_joint_states."""
         if not self.joint_state_ready.is_set():
+            # Note: this contains a lot of "joints" that are not really joints
             for uid, name in enumerate(state.joint_names):
                 self.joint_state[name] = {}
                 self.joint_state[name]["name"] = name
@@ -91,12 +89,13 @@ class GotoActionServer(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().info(f"Received goal request: {goal_request}")
-        # TODO CHECK
-        traj = goal_request.trajectory
-        if len(traj.joint_names) < 1 or (len(traj.joint_names) != len(traj.points)):
+        self.get_logger().info(f"Received goal request: {goal_request.request}")
+        request = goal_request.request  # This is of type pollen_msgs/GotoRequest
+        if len(request.goal_joints.name) < 1 or (
+            len(request.goal_joints.name) != len(request.goal_joints.position)
+        ):
             self.get_logger().error(
-                f"Invalid goal. Nb joint names={len(traj.joint_names)}, nb points={len(traj.points)}"
+                f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
             )
             return GoalResponse.REJECT
 
@@ -121,9 +120,9 @@ class GotoActionServer(Node):
 
     def compute_traj(
         self,
+        duration,
         starting_pos,
         goal_pos,
-        duration,
         starting_vel=None,
         goal_vel=None,
         starting_acc=None,
@@ -140,8 +139,8 @@ class GotoActionServer(Node):
             goal_acc,
         )
 
-    def prepare_data(self, goal_msg):
-        traj = goal_msg.trajectory
+    def prepare_data(self, goto_request):
+        # goto_request is of type pollen_msgs/GotoRequest
         goal_pos_dict = {}
         goal_vel_dict = {}
         goal_acc_dict = {}
@@ -149,48 +148,32 @@ class GotoActionServer(Node):
         start_pos_dict = {}
         start_vel_dict = {}
         start_acc_dict = {}
-        duration = None
 
-        if self.joint_state_ready.is_set():
-            for it, joint_name in enumerate(traj.joint_names):
-                if duration is None:  # not set
-                    duration = (
-                        traj.points[it].time_from_start.sec
-                        + traj.points[it].time_from_start.nanosec * 1e-9
-                    )  # it would have cost only one line of code not to annoy hundreds of developpers but no https://github.com/ros2/rclpy/pull/1010
+        for it, joint_name in enumerate(goto_request.goal_joints.name):
+            goal_pos_dict[joint_name] = goto_request.goal_joints.position[it]
 
-                goal_pos_dict[joint_name] = traj.points[it].positions[0]
+            start_pos_dict[joint_name] = self.joint_state[joint_name]["position"]
 
-                start_pos_dict[joint_name] = self.joint_state[joint_name]["position"]
+            if len(goto_request.goal_joints.velocity) > 0:
+                goal_vel_dict[joint_name] = goto_request.goal_joints.velocity[it]
+                start_vel_dict[joint_name] = self.joint_state[joint_name]["velocity"]
 
-                if len(traj.points[it].velocities) > 0:
-                    goal_vel_dict[joint_name] = traj.points[it].velocities[0]
-                    start_vel_dict[joint_name] = self.joint_state[joint_name][
-                        "velocity"
-                    ]
+            else:
+                goal_vel_dict[joint_name] = 0.0
+                start_vel_dict[joint_name] = 0.0
 
-                else:
-                    goal_vel_dict[joint_name] = 0.0
-                    start_vel_dict[joint_name] = 0.0
+            # Acceleration is not implemented for now
+            goal_acc_dict[joint_name] = 0.0
+            start_acc_dict[joint_name] = 0.0
 
-                if len(traj.points[it].accelerations) > 0:
-                    goal_acc_dict[joint_name] = 0.0  # traj.points[it].accelerations[0]
-                    start_acc_dict[joint_name] = 0.0  # we don't have that...
-                else:
-                    goal_acc_dict[joint_name] = 0.0
-                    start_acc_dict[joint_name] = 0.0
-
-            return (
-                start_pos_dict,
-                goal_pos_dict,
-                duration,
-                start_vel_dict,
-                start_acc_dict,
-                goal_vel_dict,
-                goal_acc_dict,
-            )
-        else:
-            return None
+        return (
+            start_pos_dict,
+            goal_pos_dict,
+            start_vel_dict,
+            goal_vel_dict,
+            start_acc_dict,
+            goal_acc_dict,
+        )
 
     def cmd_pub(self, joints, points):
         cmd_msg = DynamicJointState()
@@ -218,6 +201,7 @@ class GotoActionServer(Node):
         t0 = self.get_clock().now()
 
         rate = self.create_rate(sampling_freq)
+        commands_sent = 0
         while True:
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
@@ -233,12 +217,14 @@ class GotoActionServer(Node):
 
             point = traj_func(elapsed_time)
 
-            feedback_msg = GotoTrajectory.Feedback()
-            feedback_msg.feedback.status = "running"
-            feedback_msg.feedback.time_to_completion = duration - elapsed_time
-
             self.cmd_pub(joints, point)
-            goal_handle.publish_feedback(feedback_msg)
+            commands_sent += 1
+
+            if commands_sent % self.nb_commands_per_feedback == 0:
+                feedback_msg = Goto.Feedback()
+                feedback_msg.feedback.status = "running"
+                feedback_msg.feedback.time_to_completion = duration - elapsed_time
+                goal_handle.publish_feedback(feedback_msg)
             rate.sleep()
 
         return "finished"
@@ -255,46 +241,69 @@ class GotoActionServer(Node):
             self.get_logger().warn(f"Executing goal...")
             ret = ""
             if self.joint_state_ready.is_set():
+                goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
+                duration = goto_request.duration
+                mode = goto_request.mode
+                sampling_freq = goto_request.sampling_freq
+                safety_on = goto_request.safety_on
+
+                if mode == "linear":
+                    interpolation_mode = InterpolationMode.LINEAR
+                elif mode == "minimum_jerk":
+                    interpolation_mode = InterpolationMode.MINIMUM_JERK
+                else:
+                    self.get_logger().warn(
+                        f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
+                    )
+                    interpolation_mode = InterpolationMode.MINIMUM_JERK
+
                 (
                     start_pos_dict,
                     goal_pos_dict,
-                    duration,
                     start_vel_dict,
-                    start_acc_dict,
                     goal_vel_dict,
+                    start_acc_dict,
                     goal_acc_dict,
-                ) = self.prepare_data(goal_handle.request)
+                ) = self.prepare_data(goto_request)
                 self.get_logger().warn(
                     f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
                 )
+
                 traj_func = self.compute_traj(
+                    duration,
                     np.array(list(start_pos_dict.values())),
                     np.array(list(goal_pos_dict.values())),
-                    duration,
                     np.array(list(start_vel_dict.values())),
                     np.array(list(goal_vel_dict.values())),
                     np.array(list(start_acc_dict.values())),
                     np.array(list(goal_acc_dict.values())),
+                    interpolation_mode=interpolation_mode,
                 )
                 joints = start_pos_dict.keys()
-                ret = self.goto(traj_func, joints, duration, goal_handle)
+                ret = self.goto(
+                    traj_func,
+                    joints,
+                    duration,
+                    goal_handle,
+                    sampling_freq=sampling_freq,
+                )
 
                 goal_handle.succeed()
 
                 # Populate result message
-                result = GotoTrajectory.Result()
+                result = Goto.Result()
                 result.result.status = ret
                 self.get_logger().warn(f"Returning result {result}")
 
                 return result
 
             else:
-                self.get_logger().warn("Not ready...")
-                # TODO
+                self.get_logger().warn(
+                    "Goto action server received goal before joint state was ready"
+                )
                 goal_handle.abort()
-
                 # Populate result message
-                result = GotoTrajectory.Result()
+                result = Goto.Result()
                 result.result.status = "failed"
                 self.get_logger().warn(f"Returning failed result {result}")
 

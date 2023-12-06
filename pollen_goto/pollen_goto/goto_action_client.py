@@ -3,7 +3,8 @@ import asyncio
 from action_msgs.msg import GoalStatus
 from trajectory_msgs.msg import JointTrajectoryPoint
 
-from pollen_msgs.action import GotoTrajectory
+from pollen_msgs.action import Goto
+from sensor_msgs.msg import JointState
 
 
 import rclpy
@@ -19,9 +20,7 @@ class GotoActionClient(Node):
         self.prefixes = ["r_arm", "l_arm", "neck"]
         self.goto_action_client = {}
         for prefix in self.prefixes:
-            self.goto_action_client[prefix] = ActionClient(
-                self, GotoTrajectory, f"{prefix}_goto"
-            )
+            self.goto_action_client[prefix] = ActionClient(self, Goto, f"{prefix}_goto")
             self.get_logger().info(f"Waiting for action server {prefix}_goto...")
             self.goto_action_client[prefix].wait_for_server()
 
@@ -32,16 +31,27 @@ class GotoActionClient(Node):
         )
 
     async def send_goal(
-        self, part: str, joints: List[str], goal_positions: List[float], duration: float
+        self,
+        part: str,
+        joint_names: List[str],
+        goal_positions: List[float],
+        duration: float,
+        goal_velocities: List[float] = [],
     ):
-        goal_msg = GotoTrajectory.Goal()
+        goal_msg = Goto.Goal()
+        request = goal_msg.request  # This is of type pollen_msgs/GotoRequest
 
-        goal_msg.trajectory.joint_names = joints
-        p = JointTrajectoryPoint()
-        p.positions = goal_positions
-        p.time_from_start.sec = int(duration)
-        p.time_from_start.nanosec = int((duration - int(duration)) * 1e9)
-        goal_msg.trajectory.points = [p]
+        request.duration = duration
+        request.mode = "linear"
+        request.sampling_freq = 150.0
+        request.safety_on = False
+
+        # Leaving starting_joints empty on purpose
+        request.goal_joints = JointState()
+        request.goal_joints.name = joint_names
+        request.goal_joints.position = goal_positions
+        request.goal_joints.velocity = goal_velocities
+        request.goal_joints.effort = []  # Not implemented for now
 
         self.get_logger().info("Sending goal request...")
 
