@@ -16,7 +16,7 @@ import time
 class GotoActionClient(Node):
     def __init__(self):
         super().__init__("goto_action_client")
-        self._action_client = ActionClient(self, GotoTrajectory, "right_arm_goto")
+        self._action_client = ActionClient(self, GotoTrajectory, "pollen_goto")
         self.get_logger().info("Waiting for action server...")
         self._action_client.wait_for_server()
 

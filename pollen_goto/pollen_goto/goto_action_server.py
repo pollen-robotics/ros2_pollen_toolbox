@@ -30,9 +30,6 @@ class GotoActionServer(Node):
     def __init__(self):
         super().__init__("goto_action_server")
 
-        self.declare_parameter("side", "right")
-        self.side = self.get_parameter("side").value
-
         self._goal_queue = collections.deque()
         self._goal_queue_lock = threading.Lock()
         self._current_goal = None
@@ -40,7 +37,7 @@ class GotoActionServer(Node):
         self._action_server = ActionServer(
             self,
             GotoTrajectory,
-            f"{self.side}_arm_goto",
+            "pollen_goto",
             handle_accepted_callback=self.handle_accepted_callback,
             execute_callback=self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
@@ -64,7 +61,7 @@ class GotoActionServer(Node):
         )
 
         self.state = State.READY
-        self.get_logger().info(f"Goto action server init ({self.side})")
+        self.get_logger().info("Goto action server init.")
 
     def on_dynamic_joint_states(self, state: DynamicJointState):
         """Retreive the joint state from /dynamic_joint_states."""
@@ -74,7 +71,9 @@ class GotoActionServer(Node):
                 self.joint_state[name]["name"] = name
                 self.joint_state[name]["uid"] = uid
 
-        for uid, (name, kv) in enumerate(zip(state.joint_names, state.interface_values)):
+        for uid, (name, kv) in enumerate(
+            zip(state.joint_names, state.interface_values)
+        ):
             for k, v in zip(kv.interface_names, kv.values):
                 self.joint_state[name][k] = v
 
@@ -92,7 +91,7 @@ class GotoActionServer(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().info(f"Received goal request: {goal_request} side: {self.side}")
+        self.get_logger().info(f"Received goal request: {goal_request}")
         # TODO CHECK
         traj = goal_request.trajectory
         if len(traj.joint_names) < 1 or (len(traj.joint_names) != len(traj.points)):
@@ -108,11 +107,11 @@ class GotoActionServer(Node):
             if self._current_goal is not None:
                 # Put incoming goal in the queue
                 self._goal_queue.append(goal_handle)
-                self.get_logger().info(f"New goal received and put in the queue ({self.side})")
+                self.get_logger().info(f"New goal received and put in the queue")
             else:
                 # Start goal execution right away
                 self._current_goal = goal_handle
-                self.get_logger().info(f"Empty queue, start executing ({self.side})")
+                self.get_logger().info(f"Empty queue, start executing")
                 self._current_goal.execute()
 
     def check(self):
@@ -154,7 +153,8 @@ class GotoActionServer(Node):
             for it, joint_name in enumerate(traj.joint_names):
                 if duration is None:  # not set
                     duration = (
-                        traj.points[it].time_from_start.sec + traj.points[it].time_from_start.nanosec * 1e-9
+                        traj.points[it].time_from_start.sec
+                        + traj.points[it].time_from_start.nanosec * 1e-9
                     )  # it would have cost only one line of code not to annoy hundreds of developpers but no https://github.com/ros2/rclpy/pull/1010
 
                 goal_pos_dict[joint_name] = traj.points[it].positions[0]
@@ -163,7 +163,9 @@ class GotoActionServer(Node):
 
                 if len(traj.points[it].velocities) > 0:
                     goal_vel_dict[joint_name] = traj.points[it].velocities[0]
-                    start_vel_dict[joint_name] = self.joint_state[joint_name]["velocity"]
+                    start_vel_dict[joint_name] = self.joint_state[joint_name][
+                        "velocity"
+                    ]
 
                 else:
                     goal_vel_dict[joint_name] = 0.0
@@ -202,10 +204,14 @@ class GotoActionServer(Node):
 
         self.joint_commands_pub.publish(cmd_msg)
 
-    def goto(self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100):
+    def goto(
+        self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
+    ):
         length = round(duration * sampling_freq)
         if length < 1:
-            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
+            raise ValueError(
+                f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
+            )
 
         t0 = self.get_clock().now()
 
@@ -237,46 +243,14 @@ class GotoActionServer(Node):
 
     def cancel_callback(self, goal_handle):
         """Accept or reject a client request to cancel an action."""
-        self.get_logger().info(f"Received cancel request (side: {self.side})")
+        self.get_logger().info(f"Received cancel request")
         return CancelResponse.ACCEPT
-
-    # async def execute_callback(self, goal_handle, side):
-    #     """Execute a goal."""
-    #     self.get_logger().info(f'Executing goal (side: {side})...')
-    #     ret = ''
-    #     if self.joint_state_ready.is_set():
-
-    #         start_pos_dict, goal_pos_dict, duration, start_vel_dict, start_acc_dict, goal_vel_dict, goal_acc_dict = self.prepare_data(goal_handle.request)
-    #         self.get_logger().warn(f'{start_pos_dict} {goal_pos_dict} {duration} {start_vel_dict} {start_acc_dict} {goal_vel_dict} {goal_acc_dict}')
-    #         traj_func = self.compute_traj(np.array(list(start_pos_dict.values())), np.array(list(goal_pos_dict.values())), duration, np.array(list(start_vel_dict.values())), np.array(list(goal_vel_dict.values())), np.array(list(start_acc_dict.values())), np.array(list(goal_acc_dict.values())))
-    #         joints = start_pos_dict.keys()
-    #         ret = self.goto(traj_func, joints, duration, goal_handle)
-    #         goal_handle.succeed()
-
-    #         # Populate result message
-    #         result = GotoTrajectory.Result()
-    #         result.result.status = ret
-    #         self.get_logger().info(f'Returning result {result}')
-
-    #         return result
-
-    #     else:
-    #         self.get_logger().warn('Not ready...')
-    #         # TODO
-    #         goal_handle.abort()
-
-    #         # Populate result message
-    #         result = GotoTrajectory.Result()
-    #         result.result.status = 'failed'
-    #         self.get_logger().warn(f'Returning result {result}')
-
-    #         return result
 
     def execute_callback(self, goal_handle):
         """Execute a goal."""
 
         try:
-            self.get_logger().warn(f"Executing goal (side: {self.side})...")
+            self.get_logger().warn(f"Executing goal...")
             ret = ""
             if self.joint_state_ready.is_set():
                 (
@@ -328,28 +302,11 @@ class GotoActionServer(Node):
                 try:
                     # Start execution of the next goal in the queue.
                     self._current_goal = self._goal_queue.popleft()
-                    # setattr(self, f'_{side}_current_goal', getattr(self, f'_{side}_goal_queue').popleft())
-                    self.get_logger().warn(f"Next goal pulled from the queue ({self.side})")
+                    self.get_logger().warn(f"Next goal pulled from the queue")
                     self._current_goal.execute()
-                    # getattr(self, f'_{side}_current_goal').execute()
                 except IndexError:
                     # No goal in the queue.
                     self._current_goal = None
-                    # setattr(self, f'_{side}_current_goal', None)
-
-            # with getattr(self, f'_{side}_goal_queue_lock'):  # self._goal_queue_lock:
-            #     try:
-            #         # Start execution of the next goal in the queue.
-
-            #         setattr(self, f'_{side}_current_goal', getattr(self, f'_{side}_goal_queue').popleft())
-            #         # self._current_goal = self._goal_queue.popleft()
-            #         self.get_logger().warn(f'Next goal pulled from the queue ({side})')
-            #         # self._current_goal.execute()
-            #         getattr(self, f'_{side}_current_goal').execute()
-            #     except IndexError:
-            #         # No goal in the queue.
-            #         # self._current_goal = None
-            #         setattr(self, f'_{side}_current_goal', None)
 
 
 def main(args=None):
