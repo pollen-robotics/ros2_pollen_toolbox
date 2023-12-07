@@ -76,7 +76,7 @@ class GotoActionServer(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().info(f"Received goal request: {goal_request.request}")
+        self.get_logger().debug(f"Received goal request: {goal_request.request}")
         request = goal_request.request  # This is of type pollen_msgs/GotoRequest
         if len(request.goal_joints.name) < 1 or (
             len(request.goal_joints.name) != len(request.goal_joints.position)
@@ -94,11 +94,11 @@ class GotoActionServer(Node):
             if self._current_goal is not None:
                 # Put incoming goal in the queue
                 self._goal_queue.append(goal_handle)
-                self.get_logger().info(f"New goal received and put in the queue")
+                self.get_logger().debug(f"New goal received and put in the queue")
             else:
                 # Start goal execution right away
                 self._current_goal = goal_handle
-                self.get_logger().info(f"Empty queue, start executing")
+                self.get_logger().debug(f"Empty queue, start executing")
                 self._current_goal.execute()
 
     def check(self):
@@ -225,7 +225,7 @@ class GotoActionServer(Node):
         """Execute a goal."""
 
         try:
-            self.get_logger().warn(f"Executing goal...")
+            self.get_logger().info(f"Executing goal...")
             ret = ""
             if self.joint_state_ready.is_set():
                 goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
@@ -252,7 +252,7 @@ class GotoActionServer(Node):
                     start_acc_dict,
                     goal_acc_dict,
                 ) = self.prepare_data(goto_request)
-                self.get_logger().warn(
+                self.get_logger().debug(
                     f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
                 )
 
@@ -280,7 +280,7 @@ class GotoActionServer(Node):
                 # Populate result message
                 result = Goto.Result()
                 result.result.status = ret
-                self.get_logger().warn(f"Returning result {result}")
+                self.get_logger().debug(f"Returning result {result}")
 
                 return result
 
@@ -300,7 +300,7 @@ class GotoActionServer(Node):
                 try:
                     # Start execution of the next goal in the queue.
                     self._current_goal = self._goal_queue.popleft()
-                    self.get_logger().warn(f"Next goal pulled from the queue")
+                    self.get_logger().debug(f"Next goal pulled from the queue")
                     self._current_goal.execute()
                 except IndexError:
                     # No goal in the queue.
