@@ -1,9 +1,6 @@
 # Total duration of the movement
 float64 duration
 
-# Starting state of the joints. If empty, the current state is read and used. Non 0 velocities can be used to link gotos requests without stopping at each goal.
-sensor_msgs/JointState starting_joints
-
 # Goal state of the joints. In normal use, this is the last command that will be sent to the robot. Non 0 velocities can be used to link gotos requests without stopping at each goal.
 sensor_msgs/JointState goal_joints
 # As of writting 2 modes are supported: "linear" and "minjerk".

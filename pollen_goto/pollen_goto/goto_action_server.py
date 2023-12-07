@@ -90,7 +90,6 @@ class GotoActionServer(Node):
 
     def handle_accepted_callback(self, goal_handle):
         """Start or defer execution of an already accepted goal."""
-
         with self._goal_queue_lock:
             if self._current_goal is not None:
                 # Put incoming goal in the queue

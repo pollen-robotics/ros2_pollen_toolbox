@@ -60,7 +60,6 @@ class GotoActionClient(Node):
         request.sampling_freq = 150.0
         request.safety_on = False
 
-        # Leaving starting_joints empty on purpose
         request.goal_joints = JointState()
         request.goal_joints.name = joint_names
         request.goal_joints.position = goal_positions
