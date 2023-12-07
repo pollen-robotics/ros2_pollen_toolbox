@@ -27,17 +27,6 @@ class GotoActionClient(Node):
             self.get_logger().info(f"Waiting for action server {prefix}_goto...")
             self.goto_action_client[prefix].wait_for_server()
 
-        self.inverse_kinematics_clients = {}
-        # For testing purposes only, IK services:
-        self.inverse_kinematics_clients["r_arm"] = self.create_client(
-            srv_type=GetInverseKinematics,
-            srv_name=f"/r_arm/inverse_kinematics",
-        )
-        self.inverse_kinematics_clients["l_arm"] = self.create_client(
-            srv_type=GetInverseKinematics,
-            srv_name=f"/l_arm/inverse_kinematics",
-        )
-
     def feedback_callback_default(self, feedback):
         self.get_logger().info(
             f"Received feedback. status: {feedback.feedback.feedback.status}, time to completion: {feedback.feedback.feedback.time_to_completion}, commands_sent {feedback.feedback.feedback.commands_sent}"
@@ -306,6 +295,80 @@ async def cancel_demo(action_client, loop):
     await action_client.send_goal("r_arm", joint_names, p, 2.0)
 
 
+async def continuous_speed_demo(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
+    logger.info(f"$$$$$$ EXAMPLE 6: continuous speed demo")
+    p = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    joint_names = [
+        "r_shoulder_pitch",
+        "r_shoulder_roll",
+        "r_elbow_yaw",
+        "r_elbow_pitch",
+        "r_wrist_roll",
+        "r_wrist_pitch",
+        "r_wrist_yaw",
+    ]
+    logger.info(
+        f"$$$In this first case, a continuation movement is scheduled before the first goto ended. It will be played as soon as the first one is finished"
+    )
+    logger.info(f"Creating task1")
+    my_task1 = loop.create_task(
+        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-0.5], 1.0)
+    )
+    await asyncio.sleep(0.5)
+    logger.info(f"Creating task2")
+    my_task2 = loop.create_task(
+        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 1.0)
+    )
+
+    logger.info(f"Gluing tasks and waiting")
+    wait_future = asyncio.wait([my_task1, my_task2])
+    # run event loop
+    finished, unfinished = await wait_future
+    logger.info(f"unfinished: {len(unfinished)}")
+    for task in finished:
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
+
+    logger.info(f"Going back to start position")
+    await action_client.send_goal("r_arm", joint_names, p, 2.0)
+
+    logger.info(
+        f"$$$In this second case, a continuation movement will also be scheduled before the first goto ended. However, this time the mode is set to linear so the movement appears to be continuous"
+    )
+    logger.info(f"Creating task1")
+    my_task1 = loop.create_task(
+        action_client.send_goal(
+            "r_arm",
+            ["r_shoulder_pitch"],
+            [-0.5],
+            1.0,
+            mode="linear",
+        )
+    )
+    await asyncio.sleep(0.5)
+    logger.info(f"Creating task2")
+    my_task2 = loop.create_task(
+        action_client.send_goal(
+            "r_arm", ["r_shoulder_pitch"], [-1.0], 1.0, mode="linear"
+        )
+    )
+
+    logger.info(f"Gluing tasks and waiting")
+    wait_future = asyncio.wait([my_task1, my_task2])
+    # run event loop
+    finished, unfinished = await wait_future
+    logger.info(f"unfinished: {len(unfinished)}")
+    for task in finished:
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
+
+    logger.info(f"Going back to start position")
+    await action_client.send_goal("r_arm", joint_names, p, 2.0)
+
+    # Note: One could set a starting speed to create continuous movements with the minimum jerk mode. But the measured speed of the joints (that will be used as starting state) have to be accurate. Otherwise, the movement will not be continuous.
+
+
 async def run_demo(args, loop):
     logger = rclpy.logging.get_logger("goto_action_client")
 
@@ -332,6 +395,9 @@ async def run_demo(args, loop):
 
     # Demo 5: cancel
     await cancel_demo(action_client, loop)
+
+    # Demo 6: continuous speed
+    await continuous_speed_demo(action_client, loop)
 
     # cancel spinning task
     spin_task.cancel()
