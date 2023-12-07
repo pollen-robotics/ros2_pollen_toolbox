@@ -38,7 +38,7 @@ class GotoActionClient(Node):
             srv_name=f"/l_arm/inverse_kinematics",
         )
 
-    def feedback_callback(self, feedback):
+    def feedback_callback_default(self, feedback):
         self.get_logger().info(
             f"Received feedback. status: {feedback.feedback.feedback.status}, time to completion: {feedback.feedback.feedback.time_to_completion}, commands_sent {feedback.feedback.feedback.commands_sent}"
         )
@@ -50,6 +50,7 @@ class GotoActionClient(Node):
         goal_positions: List[float],
         duration: float,
         goal_velocities: List[float] = [],
+        feedback_callback=None,
     ):
         goal_msg = Goto.Goal()
         request = goal_msg.request  # This is of type pollen_msgs/GotoRequest
@@ -69,7 +70,7 @@ class GotoActionClient(Node):
         self.get_logger().info("Sending goal request...")
 
         goal_handle = await self.goto_action_client[part].send_goal_async(
-            goal_msg, feedback_callback=self.feedback_callback
+            goal_msg, feedback_callback=feedback_callback
         )
         self.get_logger().info("feedback_callback setuped")
 
@@ -82,12 +83,8 @@ class GotoActionClient(Node):
 
         result = res.result
         status = res.status
-        self.get_logger().info("Goal async finished")
+        self.get_logger().info(f"Goto finished. Result: {result.result.status}")
 
-        if status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info("Goal succeeded! Result: {0}".format(result))
-        else:
-            self.get_logger().info("Goal failed with status: {0}".format(status))
         return result, status
 
 
@@ -101,32 +98,36 @@ async def blocking_demo(action_client):
     logger = rclpy.logging.get_logger("goto_action_client")
 
     logger.info(f"$$$$$$ EXAMPLE 1: blocking calls")
+    # Setting the feedback callback only once because it's very verbose
     result, status = await action_client.send_goal(
-        "r_arm", ["r_shoulder_pitch"], [-1.0], 2.0
+        "r_arm",
+        ["r_shoulder_pitch"],
+        [-1.0],
+        2.0,
+        feedback_callback=action_client.feedback_callback_default,
     )
-    logger.info(f"A) result {result} and status flag {status}")
+    # An example on how to read result and status:
+    if status == GoalStatus.STATUS_SUCCEEDED:
+        logger.info(f"Goal succeeded! Result: {result.result.status}")
+    else:
+        logger.info(f"Goal failed. Result: {result.result.status}")
 
     result, status = await action_client.send_goal(
         "l_arm", ["l_shoulder_pitch"], [-1.0], 2.0
     )
-    logger.info(f"B) result {result} and status flag {status}")
 
     result, status = await action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
-    logger.info(f"C) result {result} and status flag {status}")
 
     logger.info(f"$$$$$$ EXAMPLE 1: going back to start position")
     result, status = await action_client.send_goal(
         "r_arm", ["r_shoulder_pitch"], [0.0], 2.0
     )
-    logger.info(f"A) result {result} and status flag {status}")
 
     result, status = await action_client.send_goal(
         "l_arm", ["l_shoulder_pitch"], [0.0], 2.0
     )
-    logger.info(f"B) result {result} and status flag {status}")
 
     result, status = await action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
-    logger.info(f"C) result {result} and status flag {status}")
 
 
 async def non_blocking_demo(action_client, loop):
@@ -149,7 +150,9 @@ async def non_blocking_demo(action_client, loop):
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
-        logger.info("result {} and status flag {}".format(*task.result()))
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
+
     logger.info(f"$$$$$$ EXAMPLE 2: Going back to start position")
     my_task1 = loop.create_task(
         action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0)
@@ -166,7 +169,8 @@ async def non_blocking_demo(action_client, loop):
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
-        logger.info("result {} and status flag {}".format(*task.result()))
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
 
 
 async def non_blocking_demo_delay(action_client, loop):
@@ -193,7 +197,8 @@ async def non_blocking_demo_delay(action_client, loop):
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
-        logger.info("result {} and status flag {}".format(*task.result()))
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
 
     logger.info(f"$$$$$$ EXAMPLE 3: Going back to start position")
     my_task1 = loop.create_task(
@@ -214,7 +219,8 @@ async def non_blocking_demo_delay(action_client, loop):
     finished, unfinished = await wait_future
     logger.info(f"unfinished: {len(unfinished)}")
     for task in finished:
-        logger.info("result {} and status flag {}".format(*task.result()))
+        result, status = task.result()
+        logger.info(f"Result: {result.result.status}")
 
 
 async def square_demo(action_client, loop):
@@ -243,7 +249,7 @@ async def square_demo(action_client, loop):
         # Setting values of p to radians
         p = [np.deg2rad(i) for i in p]
         result, status = await action_client.send_goal("r_arm", joint_names, p, 2.0)
-        logger.info(f"result {result} and status flag {status}")
+        logger.info(f"Result: {result.result.status}")
 
 
 async def run_demo(args, loop):
