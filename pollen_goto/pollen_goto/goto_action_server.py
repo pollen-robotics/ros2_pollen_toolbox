@@ -221,6 +221,15 @@ class GotoActionServer(Node):
         self.get_logger().info(f"Received cancel request")
         return CancelResponse.ACCEPT
 
+        # Check state and decide
+        if goal_handle.is_active or goal_handle.is_executing:
+            self.get_logger().info("Goal is active or executing")
+
+            return CancelResponse.ACCEPT
+        else:
+            self.get_logger().info("Goal is not active or executing")
+            return CancelResponse.REJECT
+
     def execute_callback(self, goal_handle):
         """Execute a goal."""
 
@@ -275,7 +284,11 @@ class GotoActionServer(Node):
                     sampling_freq=sampling_freq,
                 )
 
-                goal_handle.succeed()
+                if ret == "finished":
+                    goal_handle.succeed()
+                # This is handled in the cancel_callback
+                # elif ret == "canceled":
+                #     goal_handle.canceled()
 
                 # Populate result message
                 result = Goto.Result()

@@ -50,14 +50,15 @@ class GotoActionClient(Node):
         goal_positions: List[float],
         duration: float,
         goal_velocities: List[float] = [],
+        mode: str = "minimum_jerk",  # "linear" or "minimum_jerk"
         feedback_callback=None,
+        return_handle=False,
     ):
         goal_msg = Goto.Goal()
         request = goal_msg.request  # This is of type pollen_msgs/GotoRequest
 
         request.duration = duration
-        # request.mode = "linear"
-        request.mode = "minimum_jerk"
+        request.mode = mode
         request.sampling_freq = 150.0
         request.safety_on = False
 
@@ -79,13 +80,15 @@ class GotoActionClient(Node):
             return
 
         self.get_logger().info("Goal accepted")
-        res = await goal_handle.get_result_async()
 
-        result = res.result
-        status = res.status
-        self.get_logger().info(f"Goto finished. Result: {result.result.status}")
-
-        return result, status
+        if return_handle:
+            return goal_handle
+        else:
+            res = await goal_handle.get_result_async()
+            result = res.result
+            status = res.status
+            self.get_logger().info(f"Goto finished. Result: {result.result.status}")
+            return result, status
 
 
 async def spinning(node):
@@ -106,6 +109,7 @@ async def blocking_demo(action_client):
         2.0,
         feedback_callback=action_client.feedback_callback_default,
     )
+
     # An example on how to read result and status:
     if status == GoalStatus.STATUS_SUCCEEDED:
         logger.info(f"Goal succeeded! Result: {result.result.status}")
@@ -113,21 +117,35 @@ async def blocking_demo(action_client):
         logger.info(f"Goal failed. Result: {result.result.status}")
 
     result, status = await action_client.send_goal(
-        "l_arm", ["l_shoulder_pitch"], [-1.0], 2.0
+        "l_arm",
+        ["l_shoulder_pitch"],
+        [-1.0],
+        2.0,
     )
 
     result, status = await action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
 
     logger.info(f"$$$$$$ EXAMPLE 1: going back to start position")
     result, status = await action_client.send_goal(
-        "r_arm", ["r_shoulder_pitch"], [0.0], 2.0
+        "r_arm",
+        ["r_shoulder_pitch"],
+        [0.0],
+        2.0,
     )
 
     result, status = await action_client.send_goal(
-        "l_arm", ["l_shoulder_pitch"], [0.0], 2.0
+        "l_arm",
+        ["l_shoulder_pitch"],
+        [0.0],
+        2.0,
     )
 
-    result, status = await action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
+    result, status = await action_client.send_goal(
+        "neck",
+        ["neck_roll"],
+        [0.0],
+        2.0,
+    )
 
 
 async def non_blocking_demo(action_client, loop):
@@ -232,7 +250,7 @@ async def square_demo(action_client, loop):
         [-6.43, -34.65, -46.71, -109.05, 42.49, -28.29, 45.83],
         [-22.53, 5.92, 2.71, -123.43, -31.76, -50.2, -30.13],
         [2.66, 6.08, -1.9, -83.19, -12.97, 10.76, -3.67],
-        [0, 0, 0, 0, 0, 0, 0],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     ]
 
     joint_names = [
@@ -250,6 +268,42 @@ async def square_demo(action_client, loop):
         p = [np.deg2rad(i) for i in p]
         result, status = await action_client.send_goal("r_arm", joint_names, p, 2.0)
         logger.info(f"Result: {result.result.status}")
+
+
+async def cancel_demo(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
+    logger.info(f"$$$$$$ EXAMPLE 5: cancel demo")
+
+    p = [7.53, -22.16, -30.57, -69.92, 14.82, 20.59, 18.28]
+
+    joint_names = [
+        "r_shoulder_pitch",
+        "r_shoulder_roll",
+        "r_elbow_yaw",
+        "r_elbow_pitch",
+        "r_wrist_roll",
+        "r_wrist_pitch",
+        "r_wrist_yaw",
+    ]
+
+    # Setting values of p to radians
+    p = [np.deg2rad(i) for i in p]
+    goal_handle = await action_client.send_goal(
+        "r_arm",
+        joint_names,
+        p,
+        2.0,
+        return_handle=True,
+        feedback_callback=action_client.feedback_callback_default,
+    )
+    await asyncio.sleep(1.0)
+    await goal_handle.cancel_goal_async()
+    logger.info(f"Goal canceled!")
+
+    logger.info(f"Going back to 0")
+
+    p = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    await action_client.send_goal("r_arm", joint_names, p, 2.0)
 
 
 async def run_demo(args, loop):
@@ -275,6 +329,9 @@ async def run_demo(args, loop):
 
     # Demo 4: square
     await square_demo(action_client, loop)
+
+    # Demo 5: cancel
+    await cancel_demo(action_client, loop)
 
     # cancel spinning task
     spin_task.cancel()
