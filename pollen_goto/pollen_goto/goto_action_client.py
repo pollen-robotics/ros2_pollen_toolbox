@@ -13,7 +13,6 @@ from rclpy.node import Node
 from typing import List
 
 from pollen_msgs.srv import GetInverseKinematics
-from pollen_msgs.srv import GetDynamicState
 from reachy_sdk_server.conversion import matrix_to_pose, pose_to_matrix
 from typing import Tuple
 
@@ -70,7 +69,6 @@ class GotoActionClient(Node):
 
         self.get_logger().info("Sending goal request...")
 
-        # configuring a feedback callback apparently deadlocks the client??
         goal_handle = await self.goto_action_client[part].send_goal_async(
             goal_msg, feedback_callback=self.feedback_callback
         )

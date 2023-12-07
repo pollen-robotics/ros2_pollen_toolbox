@@ -6,19 +6,13 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from sensor_msgs.msg import JointState
 from .interpolation import InterpolationMode
 
-from enum import Enum
 from threading import Event
 import threading
 import numpy as np
 import collections
-
-
-# TODO
-class State(Enum):
-    READY = 1
-    RUNNING = 2
 
 
 class GotoActionServer(Node):
@@ -42,11 +36,12 @@ class GotoActionServer(Node):
 
         self.joint_state = {}
         self.joint_state_ready = Event()
+
         self.joint_state_sub = self.create_subscription(
-            msg_type=DynamicJointState,
-            topic="/dynamic_joint_states",
+            msg_type=JointState,
+            topic="/joint_states",
             qos_profile=5,
-            callback=self.on_dynamic_joint_states,
+            callback=self.on_joint_state,
         )
 
         self.joint_commands_pub = self.create_publisher(
@@ -55,32 +50,24 @@ class GotoActionServer(Node):
             qos_profile=5,
         )
 
-        self.state = State.READY
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
         self.get_logger().info("Goto action server init.")
 
-    def on_dynamic_joint_states(self, state: DynamicJointState):
-        """Retreive the joint state from /dynamic_joint_states."""
+    def on_joint_state(self, state: JointState):
+        """Retreive the joint state from /joint_states."""
+
         if not self.joint_state_ready.is_set():
-            # Note: this contains a lot of "joints" that are not really joints
-            for uid, name in enumerate(state.joint_names):
+            for uid, name in enumerate(state.name):
                 self.joint_state[name] = {}
-                self.joint_state[name]["name"] = name
-                self.joint_state[name]["uid"] = uid
-
-        for uid, (name, kv) in enumerate(
-            zip(state.joint_names, state.interface_values)
-        ):
-            for k, v in zip(kv.interface_names, kv.values):
-                self.joint_state[name][k] = v
-
-        if not self.joint_state_ready.is_set():
-            for name, state in self.joint_state.items():
-                if "position" in state:
-                    state["target_position"] = state["position"]
-
             self.joint_state_ready.set()
+
+        for name, pos, vel, effort in zip(
+            state.name, state.position, state.velocity, state.effort
+        ):
+            self.joint_state[name]["position"] = pos
+            self.joint_state[name]["velocity"] = vel
+            self.joint_state[name]["effort"] = effort
 
     def destroy(self):
         self._action_server.destroy()
