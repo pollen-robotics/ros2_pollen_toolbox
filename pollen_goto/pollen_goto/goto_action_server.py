@@ -15,10 +15,34 @@ import numpy as np
 import collections
 
 
-class GotoActionServer(Node):
-    def __init__(self, name_prefix):
-        super().__init__(f"{name_prefix}_goto_action_server")
+class CentralJointStateHandler(Node):
+    def __init__(self):
+        super().__init__("central_joint_state_handler")
+        self.joint_state_sub = self.create_subscription(
+            JointState, "/joint_states", self.on_joint_state, 5
+        )
+        self.joint_state = {}
+        self.joint_state_ready = Event()
 
+    def on_joint_state(self, state: JointState):
+        """Retreive the joint state from /joint_states."""
+        if not self.joint_state_ready.is_set():
+            for uid, name in enumerate(state.name):
+                self.joint_state[name] = {}
+            self.joint_state_ready.set()
+
+        for name, pos, vel, effort in zip(
+            state.name, state.position, state.velocity, state.effort
+        ):
+            self.joint_state[name]["position"] = pos
+            self.joint_state[name]["velocity"] = vel
+            self.joint_state[name]["effort"] = effort
+
+
+class GotoActionServer(Node):
+    def __init__(self, name_prefix, joint_state_handler):
+        super().__init__(f"{name_prefix}_goto_action_server")
+        self.joint_state_handler = joint_state_handler
         self._goal_queue = collections.deque()
         self._goal_queue_lock = threading.Lock()
         self._current_goal = None
@@ -34,16 +58,6 @@ class GotoActionServer(Node):
             cancel_callback=self.cancel_callback,
         )
 
-        self.joint_state = {}
-        self.joint_state_ready = Event()
-
-        self.joint_state_sub = self.create_subscription(
-            msg_type=JointState,
-            topic="/joint_states",
-            qos_profile=5,
-            callback=self.on_joint_state,
-        )
-
         self.joint_commands_pub = self.create_publisher(
             msg_type=DynamicJointState,
             topic="/dynamic_joint_commands",
@@ -53,21 +67,6 @@ class GotoActionServer(Node):
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
         self.get_logger().info("Goto action server init.")
-
-    def on_joint_state(self, state: JointState):
-        """Retreive the joint state from /joint_states."""
-
-        if not self.joint_state_ready.is_set():
-            for uid, name in enumerate(state.name):
-                self.joint_state[name] = {}
-            self.joint_state_ready.set()
-
-        for name, pos, vel, effort in zip(
-            state.name, state.position, state.velocity, state.effort
-        ):
-            self.joint_state[name]["position"] = pos
-            self.joint_state[name]["velocity"] = vel
-            self.joint_state[name]["effort"] = effort
 
     def destroy(self):
         self._action_server.destroy()
@@ -138,11 +137,15 @@ class GotoActionServer(Node):
         for it, joint_name in enumerate(goto_request.goal_joints.name):
             goal_pos_dict[joint_name] = goto_request.goal_joints.position[it]
 
-            start_pos_dict[joint_name] = self.joint_state[joint_name]["position"]
+            start_pos_dict[joint_name] = self.joint_state_handler.joint_state[
+                joint_name
+            ]["position"]
 
             if len(goto_request.goal_joints.velocity) > 0:
                 goal_vel_dict[joint_name] = goto_request.goal_joints.velocity[it]
-                start_vel_dict[joint_name] = self.joint_state[joint_name]["velocity"]
+                start_vel_dict[joint_name] = self.joint_state_handler.joint_state[
+                    joint_name
+                ]["velocity"]
 
             else:
                 goal_vel_dict[joint_name] = 0.0
@@ -219,15 +222,11 @@ class GotoActionServer(Node):
     def cancel_callback(self, goal_handle):
         """Accept or reject a client request to cancel an action."""
         self.get_logger().info(f"Received cancel request")
-        return CancelResponse.ACCEPT
 
         # Check state and decide
         if goal_handle.is_active or goal_handle.is_executing:
-            self.get_logger().info("Goal is active or executing")
-
             return CancelResponse.ACCEPT
         else:
-            self.get_logger().info("Goal is not active or executing")
             return CancelResponse.REJECT
 
     def execute_callback(self, goal_handle):
@@ -236,7 +235,7 @@ class GotoActionServer(Node):
         try:
             self.get_logger().info(f"Executing goal...")
             ret = ""
-            if self.joint_state_ready.is_set():
+            if self.joint_state_handler.joint_state_ready.is_set():
                 goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
                 duration = goto_request.duration
                 mode = goto_request.mode
@@ -323,10 +322,12 @@ class GotoActionServer(Node):
 def main(args=None):
     # Same as main but creating 2 nodes
     rclpy.init(args=args)
-    r_arm_goto_action_server = GotoActionServer("r_arm")
-    l_arm_goto_action_server = GotoActionServer("l_arm")
-    neck_goto_action_server = GotoActionServer("neck")
+    joint_state_handler = CentralJointStateHandler()
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler)
+    neck_goto_action_server = GotoActionServer("neck", joint_state_handler)
     mult_executor = MultiThreadedExecutor()
+    mult_executor.add_node(joint_state_handler)
     mult_executor.add_node(r_arm_goto_action_server)
     mult_executor.add_node(l_arm_goto_action_server)
     mult_executor.add_node(neck_goto_action_server)
