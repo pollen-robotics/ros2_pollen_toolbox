@@ -12,9 +12,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from typing import List
 
-from pollen_msgs.srv import GetInverseKinematics
 from reachy_sdk_server.conversion import matrix_to_pose, pose_to_matrix
-from typing import Tuple
 
 
 class GotoActionClient(Node):

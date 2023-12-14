@@ -333,7 +333,7 @@ def main(args=None):
     mult_executor.add_node(neck_goto_action_server)
     executor_thread = threading.Thread(target=mult_executor.spin, daemon=True)
     executor_thread.start()
-    rate = r_arm_goto_action_server.create_rate(0.5)
+    rate = r_arm_goto_action_server.create_rate(2.0)
 
     try:
         while rclpy.ok():
