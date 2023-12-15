@@ -286,20 +286,6 @@ class GotoActionServer(Node):
 
         start_time = time.time()
         try:
-            # TEMP
-            goto_request = goal_handle.request.request
-            duration = goto_request.duration
-
-            # emulate a long computation without sleep
-            while time.time() - start_time < duration:
-                pass
-
-            goal_handle.succeed()
-            result = Goto.Result()
-            result.result.status = "finished"
-
-            return result
-
             self.get_logger().info(f"Executing goal...")
             ret = ""
             self.get_logger().warn(

@@ -20,6 +20,7 @@ class GotoActionClient(Node):
     def __init__(self):
         super().__init__("goto_action_client")
         self.prefixes = ["r_arm", "l_arm", "neck"]
+        # self.prefixes = ["r_arm"]
         self.goto_action_client = {}
         for prefix in self.prefixes:
             self.goto_action_client[prefix] = ActionClient(self, Goto, f"{prefix}_goto")
