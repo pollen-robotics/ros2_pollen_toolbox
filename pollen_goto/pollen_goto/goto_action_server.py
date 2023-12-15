@@ -77,7 +77,12 @@ class GotoActionServer(Node):
         # This server allows multiple goals in parallel
         self.get_logger().debug(f"Received goal request: {goal_request.request}")
         request = goal_request.request  # This is of type pollen_msgs/GotoRequest
-        if len(request.goal_joints.name) < 1 or (
+        duration = request.duration
+        if duration <= 0.001:
+            self.get_logger().error(f"Invalid duration {duration}")
+            return GoalResponse.REJECT
+
+        elif len(request.goal_joints.name) < 1 or (
             len(request.goal_joints.name) != len(request.goal_joints.position)
         ):
             self.get_logger().error(
