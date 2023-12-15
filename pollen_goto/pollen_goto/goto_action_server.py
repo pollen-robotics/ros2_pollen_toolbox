@@ -1,9 +1,10 @@
+import time
 from pollen_msgs.action import Goto
 from control_msgs.msg import DynamicJointState, InterfaceValue
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
@@ -54,6 +55,7 @@ class GotoActionServer(Node):
             handle_accepted_callback=self.handle_accepted_callback,
             execute_callback=self.execute_callback,
             callback_group=ReentrantCallbackGroup(),
+            # callback_group=MutuallyExclusiveCallbackGroup(), # The sluginesh also happens with this callback group
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
         )
@@ -94,7 +96,13 @@ class GotoActionServer(Node):
 
     def handle_accepted_callback(self, goal_handle):
         """Start or defer execution of an already accepted goal."""
+        # print size of queue
+        self.get_logger().info(f"Queue size: {len(self._goal_queue)}")
+        # check time spent waiting here
+        t = time.time()
+        should_execute = False
         with self._goal_queue_lock:
+            self.get_logger().info(f"Spent {1000*(time.time()-t)}ms waiting for lock")
             if self._current_goal is not None:
                 # Put incoming goal in the queue
                 self._goal_queue.append(goal_handle)
@@ -103,7 +111,9 @@ class GotoActionServer(Node):
                 # Start goal execution right away
                 self._current_goal = goal_handle
                 self.get_logger().debug(f"Empty queue, start executing")
-                self._current_goal.execute()
+                should_execute = True
+        if should_execute:
+            self._current_goal.execute()
 
     def check(self):
         pass
@@ -236,11 +246,14 @@ class GotoActionServer(Node):
 
     def execute_callback(self, goal_handle):
         """Execute a goal."""
-
+        start_time = time.time()
         try:
             self.get_logger().info(f"Executing goal...")
             ret = ""
             if self.joint_state_handler.joint_state_ready.is_set():
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
+                )
                 goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
                 duration = goto_request.duration
                 mode = goto_request.mode
@@ -265,6 +278,9 @@ class GotoActionServer(Node):
                     start_acc_dict,
                     goal_acc_dict,
                 ) = self.prepare_data(goto_request)
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data"
+                )
                 self.get_logger().debug(
                     f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
                 )
@@ -279,6 +295,9 @@ class GotoActionServer(Node):
                     np.array(list(goal_acc_dict.values())),
                     interpolation_mode=interpolation_mode,
                 )
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
+                )
                 joints = start_pos_dict.keys()
                 ret = self.goto(
                     traj_func,
@@ -287,9 +306,13 @@ class GotoActionServer(Node):
                     goal_handle,
                     sampling_freq=sampling_freq,
                 )
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
+                )
 
                 if ret == "finished":
                     goal_handle.succeed()
+
                 # This is handled in the cancel_callback
                 # elif ret == "canceled":
                 #     goal_handle.canceled()
@@ -298,6 +321,10 @@ class GotoActionServer(Node):
                 result = Goto.Result()
                 result.result.status = ret
                 self.get_logger().debug(f"Returning result {result}")
+
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end"
+                )
 
                 return result
 
@@ -314,14 +341,19 @@ class GotoActionServer(Node):
                 return result
         finally:
             with self._goal_queue_lock:
-                try:
-                    # Start execution of the next goal in the queue.
+                self.get_logger().warn(
+                    f"Timestamp: {1000*(time.time() - start_time):.2f}ms after lock"
+                )
+                self._current_goal = None
+                # check if _goal_queue has something in it
+                if len(self._goal_queue) > 0:
                     self._current_goal = self._goal_queue.popleft()
-                    self.get_logger().debug(f"Next goal pulled from the queue")
-                    self._current_goal.execute()
-                except IndexError:
-                    # No goal in the queue.
-                    self._current_goal = None
+                    self.get_logger().info(f"Next goal pulled from the queue")
+            self.get_logger().warn(
+                f"Timestamp: {1000*(time.time() - start_time):.2f}ms before next execute"
+            )
+            if self._current_goal is not None:
+                self._current_goal.execute()
 
 
 def main(args=None):

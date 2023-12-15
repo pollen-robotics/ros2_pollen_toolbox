@@ -1,3 +1,4 @@
+import copy
 import rclpy
 import asyncio
 import numpy as np
@@ -367,6 +368,72 @@ async def continuous_speed_demo(action_client, loop):
     # Note: One could set a starting speed to create continuous movements with the minimum jerk mode. But the measured speed of the joints (that will be used as starting state) have to be accurate. Otherwise, the movement will not be continuous.
 
 
+async def all_at_once_demo(action_client, loop):
+    logger = rclpy.logging.get_logger("goto_action_client")
+    logger.info(f"$$$$$$ EXAMPLE 4: complete IK calls")
+
+    r_square = [
+        [7.53, -22.16, -30.57, -69.92, 14.82, 20.59, 18.28],
+        [-6.43, -34.65, -46.71, -109.05, 42.49, -28.29, 45.83],
+        [-22.53, 5.92, 2.71, -123.43, -31.76, -50.2, -30.13],
+        [2.66, 6.08, -1.9, -83.19, -12.97, 10.76, -3.67],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ]
+    neck_angles = [
+        [0.2, 0.2, 0.2],
+        [0.0, 0.0, 0.0],
+        [-0.2, -0.2, -0.2],
+        [0.0, 0.0, 0.0],
+    ]
+
+    r_joint_names = [
+        "r_shoulder_pitch",
+        "r_shoulder_roll",
+        "r_elbow_yaw",
+        "r_elbow_pitch",
+        "r_wrist_roll",
+        "r_wrist_pitch",
+        "r_wrist_yaw",
+    ]
+
+    l_joint_names = [
+        "l_shoulder_pitch",
+        "l_shoulder_roll",
+        "l_elbow_yaw",
+        "l_elbow_pitch",
+        "l_wrist_roll",
+        "l_wrist_pitch",
+        "l_wrist_yaw",
+    ]
+
+    for index, p in enumerate(r_square):
+        # Setting values of p to radians
+        p_r = [np.deg2rad(i) for i in p]
+        # p_l is like p_r but inverted when index==1
+        p_l = copy.deepcopy(p_r)
+        p_l[1] = -p_l[1]
+        p_l[2] = -p_l[2]
+        p_l[4] = -p_l[4]
+        p_l[6] = -p_l[6]
+
+        my_task1 = loop.create_task(
+            action_client.send_goal("r_arm", r_joint_names, p_r, 0.5)
+        )
+        my_task2 = loop.create_task(
+            action_client.send_goal("l_arm", l_joint_names, p_l, 0.5)
+        )
+        my_task3 = loop.create_task(
+            action_client.send_goal(
+                "neck",
+                ["neck_roll", "neck_pitch", "neck_yaw"],
+                neck_angles[index % len(neck_angles)],
+                0.5,
+            )
+        )
+        wait_future = asyncio.wait([my_task1, my_task2, my_task3])
+        finished, unfinished = await wait_future
+
+
 async def run_demo(args, loop):
     logger = rclpy.logging.get_logger("goto_action_client")
 
@@ -379,23 +446,26 @@ async def run_demo(args, loop):
     # start spinning
     spin_task = loop.create_task(spinning(action_client))
 
-    # Demo 1: blocking calls
-    await blocking_demo(action_client)
+    # # Demo 1: blocking calls
+    # await blocking_demo(action_client)
 
-    # Demo 2: non-blocking calls called simultaneously
-    await non_blocking_demo(action_client, loop)
+    # # Demo 2: non-blocking calls called simultaneously
+    # await non_blocking_demo(action_client, loop)
 
-    # Demo 3: non-blocking calls called with a delay
-    await non_blocking_demo_delay(action_client, loop)
+    # # Demo 3: non-blocking calls called with a delay
+    # await non_blocking_demo_delay(action_client, loop)
 
     # Demo 4: square
-    await square_demo(action_client, loop)
+    # await square_demo(action_client, loop)
 
-    # Demo 5: cancel
-    await cancel_demo(action_client, loop)
+    # # Demo 5: cancel
+    # await cancel_demo(action_client, loop)
 
-    # Demo 6: continuous speed
-    await continuous_speed_demo(action_client, loop)
+    # # Demo 6: continuous speed
+    # await continuous_speed_demo(action_client, loop)
+
+    while True:
+        await all_at_once_demo(action_client, loop)
 
     # cancel spinning task
     spin_task.cancel()
