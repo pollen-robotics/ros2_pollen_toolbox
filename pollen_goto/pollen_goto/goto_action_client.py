@@ -456,7 +456,8 @@ async def run_demo(args, loop):
     # await non_blocking_demo_delay(action_client, loop)
 
     # Demo 4: square
-    # await square_demo(action_client, loop)
+    # while True:
+    #     await square_demo(action_client, loop)
 
     # # Demo 5: cancel
     # await cancel_demo(action_client, loop)
