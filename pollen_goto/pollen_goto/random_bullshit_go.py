@@ -61,14 +61,14 @@ class RandomCommandPublisher(Node):
 class CentralJointStateHandler(Node):
     def __init__(self):
         super().__init__("central_joint_state_handler")
-        # self.joint_state_sub = self.create_subscription(
-        #     JointState, "/joint_states", self.on_joint_state, 5
-        # )
+        self.joint_state_sub = self.create_subscription(
+            JointState, "/joint_states", self.on_joint_state, 5
+        )
         self.joint_state = {}
         # read from pickle file
-        self.joint_state = pickle.load(open("/home/reachy/joint_state.pkl", "rb"))
+        # self.joint_state = pickle.load(open("/home/reachy/joint_state.pkl", "rb"))
         self.joint_state_ready = Event()
-        self.joint_state_ready.set()
+        # self.joint_state_ready.set()
 
     def on_joint_state(self, state: JointState):
         """Retreive the joint state from /joint_states."""
@@ -84,8 +84,8 @@ class CentralJointStateHandler(Node):
             self.joint_state[name]["velocity"] = vel
             self.joint_state[name]["effort"] = effort
         # save joint state in a pickle file
-        with open("/home/reachy/joint_state.pkl", "wb") as f:
-            pickle.dump(self.joint_state, f)
+        # with open("/home/reachy/joint_state.pkl", "wb") as f:
+        #     pickle.dump(self.joint_state, f)
 
 
 def main(args=None):
