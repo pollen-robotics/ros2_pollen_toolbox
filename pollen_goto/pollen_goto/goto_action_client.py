@@ -255,8 +255,24 @@ async def square_demo(action_client, loop):
     for p in r_square:
         # Setting values of p to radians
         p = [np.deg2rad(i) for i in p]
-        result, status = await action_client.send_goal("r_arm", joint_names, p, 2.0)
+        result, status = await action_client.send_goal("r_arm", joint_names, p, 0.5)
         logger.info(f"Result: {result.result.status}")
+        # await asyncio.sleep(0.2)
+
+    # # Cancel version
+    # for p in r_square:
+    #     # Setting values of p to radians
+    #     p = [np.deg2rad(i) for i in p]
+    #     goal_handle = await action_client.send_goal(
+    #         "r_arm",
+    #         joint_names,
+    #         p,
+    #         0.5,
+    #         return_handle=True,
+    #         feedback_callback=action_client.feedback_callback_default,
+    #     )
+    #     await asyncio.sleep(0.4)
+    #     await goal_handle.cancel_goal_async()
 
 
 async def cancel_demo(action_client, loop):
@@ -431,6 +447,7 @@ async def all_at_once_demo(action_client, loop):
                 0.5,
             )
         )
+
         wait_future = asyncio.wait([my_task1, my_task2, my_task3])
         finished, unfinished = await wait_future
 
@@ -447,25 +464,25 @@ async def run_demo(args, loop):
     # start spinning
     spin_task = loop.create_task(spinning(action_client))
 
-    # # Demo 1: blocking calls
-    # await blocking_demo(action_client)
+    # Demo 1: blocking calls
+    await blocking_demo(action_client)
 
-    # # Demo 2: non-blocking calls called simultaneously
-    # await non_blocking_demo(action_client, loop)
+    # Demo 2: non-blocking calls called simultaneously
+    await non_blocking_demo(action_client, loop)
 
-    # # Demo 3: non-blocking calls called with a delay
-    # await non_blocking_demo_delay(action_client, loop)
+    # Demo 3: non-blocking calls called with a delay
+    await non_blocking_demo_delay(action_client, loop)
 
     # Demo 4: square
-    # while True:
-    #     await square_demo(action_client, loop)
+    await square_demo(action_client, loop)
 
-    # # Demo 5: cancel
-    # await cancel_demo(action_client, loop)
+    # Demo 5: cancel
+    await cancel_demo(action_client, loop)
 
-    # # Demo 6: continuous speed
-    # await continuous_speed_demo(action_client, loop)
+    # Demo 6: continuous speed
+    await continuous_speed_demo(action_client, loop)
 
+    # Demo 7: all at once
     while True:
         await all_at_once_demo(action_client, loop)
 

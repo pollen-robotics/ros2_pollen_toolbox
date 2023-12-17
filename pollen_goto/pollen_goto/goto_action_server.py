@@ -1,4 +1,5 @@
 from calendar import c
+import re
 import time
 from pollen_msgs.action import Goto
 from control_msgs.msg import DynamicJointState, InterfaceValue
@@ -9,6 +10,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallb
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+
 from .interpolation import InterpolationMode
 
 from threading import Event
@@ -36,7 +38,7 @@ class CentralJointStateHandler(Node):
         self.joint_state = {}
         self.joint_state_ready = Event()
 
-        # Not my proudest moment
+        # Not my proudest moment but I'd rather have this than the locks for something that happens only once at startup
         while not self.joint_state_ready.is_set():
             # spin once
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -230,7 +232,7 @@ class GotoActionServer(Node):
                 idx
             ].values[0] = p
 
-    def goto(
+    def goto_time(
         self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
     ):
         length = round(duration * sampling_freq)
@@ -239,18 +241,18 @@ class GotoActionServer(Node):
                 f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
             )
 
-        t0 = self.get_clock().now()
+        t0 = time.time()
+        dt = 1 / sampling_freq
 
-        rate = self.create_rate(sampling_freq)
         commands_sent = 0
         while True:
+            t0_loop = time.time()
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 self.get_logger().info("Goal canceled")
                 return "canceled"
 
-            elapsed_time = self.get_clock().now() - t0
-            elapsed_time = elapsed_time.nanoseconds * 1e-9
+            elapsed_time = time.time() - t0
 
             if elapsed_time > duration:
                 self.get_logger().info(f"goto finished")
@@ -267,7 +269,10 @@ class GotoActionServer(Node):
                 feedback_msg.feedback.commands_sent = commands_sent
                 feedback_msg.feedback.time_to_completion = duration - elapsed_time
                 goal_handle.publish_feedback(feedback_msg)
-            rate.sleep()
+
+            # Calculate the time to sleep to achieve the desired frequency
+            sleep_duration = max(0, dt - (time.time() - t0_loop))
+            time.sleep(sleep_duration)
 
         return "finished"
 
@@ -336,7 +341,7 @@ class GotoActionServer(Node):
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
             )
             joints = start_pos_dict.keys()
-            ret = self.goto(
+            ret = self.goto_time(
                 traj_func,
                 joints,
                 duration,
@@ -349,10 +354,6 @@ class GotoActionServer(Node):
 
             if ret == "finished":
                 goal_handle.succeed()
-
-            # This is handled in the cancel_callback
-            # elif ret == "canceled":
-            #     goal_handle.canceled()
 
             # Populate result message
             result = Goto.Result()
@@ -382,12 +383,10 @@ class GotoActionServer(Node):
                 self._current_goal.execute()
 
 
-def main(args=None):
+def run_all(args=None):
     # Same as main but creating 2 nodes
     rclpy.init(args=args)
     callback_group = ReentrantCallbackGroup()
-    # callback_group1 = MutuallyExclusiveCallbackGroup()
-    # callback_group2 = MutuallyExclusiveCallbackGroup()
     joint_state_handler = CentralJointStateHandler(callback_group)
     r_arm_goto_action_server = GotoActionServer(
         "r_arm", joint_state_handler, callback_group
@@ -414,6 +413,10 @@ def main(args=None):
         pass
     rclpy.shutdown()
     executor_thread.join()
+
+
+def main(args=None):
+    run_all(args)
 
 
 if __name__ == "__main__":
