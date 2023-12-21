@@ -3,9 +3,10 @@
 <package format="3">
   <name>pollen_goto</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="remi.fabre@pollen-robotics.com">remi</maintainer>
-  <license>TODO: License declaration</license>
+  <description>ROS2 Action server and client to perform gotos (joint interpolations)</description>
+  <maintainer email="contact@pollen-robotics.com">Pollen Robotics</maintainer>
+  <license>Apache License 2.0</license>
+
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
