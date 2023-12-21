@@ -48,7 +48,7 @@ class GotoActionClient(Node):
 
         request.duration = duration
         request.mode = mode
-        request.sampling_freq = 150.0
+        request.sampling_freq = 200.0
         request.safety_on = False
 
         request.goal_joints = JointState()
@@ -464,7 +464,7 @@ async def run_demo(args, loop):
     # start spinning
     spin_task = loop.create_task(spinning(action_client))
 
-    # Demo 1: blocking calls
+    # # Demo 1: blocking calls
     await blocking_demo(action_client)
 
     # Demo 2: non-blocking calls called simultaneously
@@ -497,7 +497,10 @@ async def run_demo(args, loop):
 
 def main(args=None):
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_demo(args, loop=loop))
+    done, _pending = loop.run_until_complete(run_demo(args, loop=loop))
+
+    for task in done:
+        task.result()  # raises exceptions if any
 
 
 if __name__ == "__main__":

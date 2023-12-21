@@ -44,7 +44,7 @@ class CentralJointStateHandler(Node):
             time.sleep(0.1)
 
         self.dynamic_joint_commands = self.init_dynamic_joint_commands()
-        self.timer = self.create_timer(1.0 / 150.0, self.publish_dynamic_joint_commands)
+        self.timer = self.create_timer(1.0 / 200.0, self.publish_dynamic_joint_commands)
 
     def on_joint_state(self, state: JointState):
         """Retreive the joint state from /joint_states."""
@@ -133,7 +133,7 @@ class GotoActionServer(Node):
         t = time.time()
         should_execute = False
         with self._goal_queue_lock:
-            self.get_logger().info(f"Spent {1000*(time.time()-t)}ms waiting for lock")
+            self.get_logger().debug(f"Spent {1000*(time.time()-t)}ms waiting for lock")
             if self._current_goal is not None:
                 # Put incoming goal in the queue
                 self._goal_queue.append(goal_handle)
@@ -276,6 +276,7 @@ class GotoActionServer(Node):
 
             # Calculate the time to sleep to achieve the desired frequency
             sleep_duration = max(0, dt - (time.time() - t0_loop))
+            # TODO do better. But Rate() won't work well in this context.
             time.sleep(sleep_duration)
 
         return "finished"
@@ -297,7 +298,7 @@ class GotoActionServer(Node):
         try:
             self.get_logger().info(f"Executing goal...")
             ret = ""
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
             )
             goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
@@ -324,7 +325,7 @@ class GotoActionServer(Node):
                 start_acc_dict,
                 goal_acc_dict,
             ) = self.prepare_data(goto_request)
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data"
             )
             self.get_logger().debug(
@@ -341,7 +342,7 @@ class GotoActionServer(Node):
                 np.array(list(goal_acc_dict.values())),
                 interpolation_mode=interpolation_mode,
             )
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
             )
             joints = start_pos_dict.keys()
@@ -352,7 +353,7 @@ class GotoActionServer(Node):
                 goal_handle,
                 sampling_freq=sampling_freq,
             )
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
             )
 
@@ -364,7 +365,7 @@ class GotoActionServer(Node):
             result.result.status = ret
             self.get_logger().debug(f"Returning result {result}")
 
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end"
             )
 
@@ -372,7 +373,7 @@ class GotoActionServer(Node):
 
         finally:
             with self._goal_queue_lock:
-                self.get_logger().warn(
+                self.get_logger().debug(
                     f"Timestamp: {1000*(time.time() - start_time):.2f}ms after lock"
                 )
                 self._current_goal = None
@@ -380,27 +381,26 @@ class GotoActionServer(Node):
                 if len(self._goal_queue) > 0:
                     self._current_goal = self._goal_queue.popleft()
                     self.get_logger().info(f"Next goal pulled from the queue")
-            self.get_logger().warn(
+            self.get_logger().debug(
                 f"Timestamp: {1000*(time.time() - start_time):.2f}ms before next execute"
             )
             if self._current_goal is not None:
                 self._current_goal.execute()
 
 
-def run_all(args=None):
-    # Same as main but creating 2 nodes
+def main(args=None):
     rclpy.init(args=args)
-    # callback_group = ReentrantCallbackGroup()
+    callback_group = ReentrantCallbackGroup()
 
-    joint_state_handler = CentralJointStateHandler(MutuallyExclusiveCallbackGroup())
+    joint_state_handler = CentralJointStateHandler(callback_group)
     r_arm_goto_action_server = GotoActionServer(
-        "r_arm", joint_state_handler, MutuallyExclusiveCallbackGroup()
+        "r_arm", joint_state_handler, callback_group
     )
     l_arm_goto_action_server = GotoActionServer(
-        "l_arm", joint_state_handler, MutuallyExclusiveCallbackGroup()
+        "l_arm", joint_state_handler, callback_group
     )
     neck_goto_action_server = GotoActionServer(
-        "neck", joint_state_handler, MutuallyExclusiveCallbackGroup()
+        "neck", joint_state_handler, callback_group
     )
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
@@ -418,10 +418,6 @@ def run_all(args=None):
         pass
     rclpy.shutdown()
     executor_thread.join()
-
-
-def main(args=None):
-    run_all(args)
 
 
 if __name__ == "__main__":
