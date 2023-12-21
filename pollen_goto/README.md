@@ -1,40 +1,30 @@
-# Simple Goto action server
+# Pollen Goto
 
-- exposes 2 action topics:
-  - /right_arm_goto
-  - /left_arm_goto
+At its basic level, the goto action server will perform interpolations in joint state, the resulting joint commands are published on topic ```/dynamic_joint_commands```.
+
+Exposes 3 action servers:
+  - /r_arm_goto_action_server
+  - /l_arm_goto_action_server
+  - /neck_goto_action_server
+
+## Features
+- **Async.** Gotos can be call in a blocking manner or in async
+- **Cancelation.** Goals can be canceled at any moment during execution
+- **Queuing.** If a goal is received during the execution of a goto, it will be queued and executed as soon as the previous gotos are finished. 
+  => This can be used to obtain continuous movements between gotos by dynamically adding a goto request whose start state matches the end state of the previous goto 
+
+Options:
+- Interpolation methods: linear or minimum jerk.
+- Interpolation frequency: the server will apply the frequency requested by the client.
 
 ## Examples
 
-`ros2 run pollen_goto goto`
-
-`ros2 action send_goal /right_arm_goto pollen_msgs/action/GotoTrajectory "{ trajectory: { joint_names: [r_shoulder_pitch], points: [ {positions: [-1], time_from_start: {sec: 2}} ] } }" --feedback`
-
-
-ros2 action send_goal /right_arm_goto pollen_msgs/action/GotoTrajectory "{ trajectory: { joint_names: [r_elbow_pitch], points: [ {positions: [-1], time_from_start: {sec: 2}} ] } }" --feedback
-
-## 27/11/2023 debug Rémi
-Fixed the bugs that bloqued the async calls on the Python client side.
-Now this works:
+Python examples on different ways to make client calls [here](./pollen_goto/goto_action_client.py)
+To run the server:
 ```
-ros2 launch reachy_bringup reachy.launch.py  fake:=true start_rviz:=true start_sdk_server:=true
+ros2 run pollen_goto goto_server
 ```
-
+To run the client examples:
 ```
-ros2 run pollen_goto goto
+ros2 run pollen_goto goto_client_test
 ```
-
-```
-cd ~/reachy_ws/src/pollen_grasping/pollen_goto/scripts
-python3 test_client_new.py
-```
-
-TODOs:
-- Sometimes when calling the client code often, a goal is not executed. => I think what happens is that sometimes the goals are inverted (so the 0 goal is executed first and the -1 goal after). If true, this is OK behaviour probably.
-- Test all features :
-  - cancellability
-  - several joints
-  - continuity in position and speed
-- Assess if we want to change the messages used
-- Cleanefy the code and move it in the correct places
-
