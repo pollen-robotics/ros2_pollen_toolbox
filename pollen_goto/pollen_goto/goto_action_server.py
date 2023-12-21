@@ -390,16 +390,17 @@ class GotoActionServer(Node):
 def run_all(args=None):
     # Same as main but creating 2 nodes
     rclpy.init(args=args)
-    callback_group = ReentrantCallbackGroup()
-    joint_state_handler = CentralJointStateHandler(callback_group)
+    # callback_group = ReentrantCallbackGroup()
+
+    joint_state_handler = CentralJointStateHandler(MutuallyExclusiveCallbackGroup())
     r_arm_goto_action_server = GotoActionServer(
-        "r_arm", joint_state_handler, callback_group
+        "r_arm", joint_state_handler, MutuallyExclusiveCallbackGroup()
     )
     l_arm_goto_action_server = GotoActionServer(
-        "l_arm", joint_state_handler, callback_group
+        "l_arm", joint_state_handler, MutuallyExclusiveCallbackGroup()
     )
     neck_goto_action_server = GotoActionServer(
-        "neck", joint_state_handler, callback_group
+        "neck", joint_state_handler, MutuallyExclusiveCallbackGroup()
     )
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
