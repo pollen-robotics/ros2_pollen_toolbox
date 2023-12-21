@@ -1,5 +1,3 @@
-from calendar import c
-import re
 import time
 from pollen_msgs.action import Goto
 from control_msgs.msg import DynamicJointState, InterfaceValue
