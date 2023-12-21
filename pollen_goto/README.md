@@ -18,7 +18,6 @@ Options:
 - Interpolation frequency: the server will apply the frequency requested by the client.
 
 ## Examples
-
 Python examples on different ways to make client calls [here](./pollen_goto/goto_action_client.py)
 To run the server:
 ```
@@ -28,3 +27,9 @@ To run the client examples:
 ```
 ros2 run pollen_goto goto_client_test
 ```
+
+## References
+Learn more about ROS2 Actions:
+https://design.ros2.org/articles/actions.html
+https://docs.ros.org/en/humble/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html
+
