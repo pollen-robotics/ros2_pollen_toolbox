@@ -210,25 +210,29 @@ class GotoActionServer(Node):
             goal_acc_dict,
         )
 
-    def cmd_pub(self, joints, points):
-        # self.get_logger().error(
-        #     f"{self.joint_state_handler.dynamic_joint_commands.interface_values[0].interface_names[0]}"
-        # )
-        # self.get_logger().error(
-        #     f"{self.joint_state_handler.dynamic_joint_commands.interface_values[0].values[0]}"
-        # )
-        for name, p in zip(joints, points):
-            # Find index of name in self.joint_state_handler.dynamic_joint_commands.joint_names
-            idx = self.joint_state_handler.dynamic_joint_commands.joint_names.index(
-                name
-            )
-            if idx == -1:
-                self.get_logger().error(f"Joint {name} not found in joint_names")
-                return
-            # print self.joint_state_handler.dynamic_joint_commands
+    def cmd_pub(self, joint_indices, points):
+        for idx, p in zip(joint_indices, points):
+            if idx < 0 or idx >= len(
+                self.joint_state_handler.dynamic_joint_commands.interface_values
+            ):
+                self.get_logger().error(f"Invalid joint index: {idx}")
+                continue
             self.joint_state_handler.dynamic_joint_commands.interface_values[
                 idx
             ].values[0] = p
+
+    def get_joint_indices(self, joints):
+        indices = []
+        for name in joints:
+            try:
+                idx = self.joint_state_handler.dynamic_joint_commands.joint_names.index(
+                    name
+                )
+                indices.append(idx)
+            except ValueError:
+                self.get_logger().error(f"Joint {name} not found in joint_names")
+                raise
+        return indices
 
     def goto_time(
         self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
@@ -239,6 +243,8 @@ class GotoActionServer(Node):
                 f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
             )
 
+        # Pre-calculate joint indices
+        joint_indices = self.get_joint_indices(joints)
         t0 = time.time()
         dt = 1 / sampling_freq
 
@@ -258,7 +264,7 @@ class GotoActionServer(Node):
 
             point = traj_func(elapsed_time)
 
-            self.cmd_pub(joints, point)
+            self.cmd_pub(joint_indices, point)
             commands_sent += 1
 
             if commands_sent % self.nb_commands_per_feedback == 0:
