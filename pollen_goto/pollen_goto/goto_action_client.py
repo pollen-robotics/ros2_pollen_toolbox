@@ -48,7 +48,7 @@ class GotoActionClient(Node):
 
         request.duration = duration
         request.mode = mode
-        request.sampling_freq = 200.0
+        request.sampling_freq = 150.0
         request.safety_on = False
 
         request.goal_joints = JointState()
@@ -464,7 +464,7 @@ async def run_demo(args, loop):
     # start spinning
     spin_task = loop.create_task(spinning(action_client))
 
-    # # Demo 1: blocking calls
+    # Demo 1: blocking calls
     await blocking_demo(action_client)
 
     # Demo 2: non-blocking calls called simultaneously
@@ -474,6 +474,7 @@ async def run_demo(args, loop):
     await non_blocking_demo_delay(action_client, loop)
 
     # Demo 4: square
+    # while True:
     await square_demo(action_client, loop)
 
     # Demo 5: cancel
@@ -482,7 +483,7 @@ async def run_demo(args, loop):
     # Demo 6: continuous speed
     await continuous_speed_demo(action_client, loop)
 
-    # Demo 7: all at once
+    # # Demo 7: all at once
     while True:
         await all_at_once_demo(action_client, loop)
 

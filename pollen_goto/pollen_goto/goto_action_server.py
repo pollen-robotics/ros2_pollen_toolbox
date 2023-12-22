@@ -18,6 +18,7 @@ import collections
 from queue import Queue
 
 
+# TODO freq should not be controlled by client anymore
 class CentralJointStateHandler(Node):
     def __init__(self, shared_callback_group):
         super().__init__("central_joint_state_handler")
@@ -35,6 +36,7 @@ class CentralJointStateHandler(Node):
             callback_group=shared_callback_group,
         )
         self.publish_lock = threading.Lock()
+        self.frequency = 150.0
 
         self.joint_state = {}
         self.joint_state_ready = Event()
@@ -46,7 +48,9 @@ class CentralJointStateHandler(Node):
             time.sleep(0.1)
 
         self.dynamic_joint_commands = self.init_dynamic_joint_commands()
-        self.timer = self.create_timer(1.0 / 500.0, self.publish_dynamic_joint_commands)
+        self.timer = self.create_timer(
+            1.0 / self.frequency, self.publish_dynamic_joint_commands
+        )
 
     def on_joint_state(self, state: JointState):
         """Retreive the joint state from /joint_states."""
@@ -86,6 +90,7 @@ class GotoActionServer(Node):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.joint_state_handler = joint_state_handler
         self._goal_queue = Queue()
+        self.execution_ongoing = Event()
 
         self._action_server = ActionServer(
             self,
@@ -106,7 +111,7 @@ class GotoActionServer(Node):
             target=self.check_queue_and_execute, daemon=True
         )
         self.check_queue_and_execute_thread.start()
-        self.rate = self.create_rate(500.0)
+        # self.rate = self.create_rate(self.joint_state_handler.frequency)
 
     def destroy(self):
         self._action_server.destroy()
@@ -138,7 +143,9 @@ class GotoActionServer(Node):
     def check_queue_and_execute(self):
         while True:
             goal_handle = self._goal_queue.get()
+            self.execution_ongoing.clear()
             goal_handle.execute()
+            self.execution_ongoing.wait()
 
     def check(self):
         pass
@@ -229,29 +236,31 @@ class GotoActionServer(Node):
                 raise
         return indices
 
-    def goto_time(
-        self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
-    ):
-        length = round(duration * sampling_freq)
+    def goto_time(self, traj_func, joints, duration, goal_handle):
+        length = round(duration * self.joint_state_handler.frequency)
         if length < 1:
             raise ValueError(
-                f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
+                f"Goto length too short! (incoherent duration {duration} or sampling_freq {self.joint_state_handler.frequency})!"
             )
 
         # Pre-calculate joint indices
         joint_indices = self.get_joint_indices(joints)
-        t0 = self.get_clock().now()
-        dt = 1 / sampling_freq
+        # t0 = self.get_clock().now()
+        t0 = time.time()
+        dt = 1 / self.joint_state_handler.frequency
 
         commands_sent = 0
         while True:
+            # t0_loop = self.get_clock().now()
+            t0_loop = time.time()
             if goal_handle.is_cancel_requested:
                 goal_handle.canceled()
                 self.get_logger().info("Goal canceled")
                 return "canceled"
 
-            elapsed_time = self.get_clock().now() - t0
-            elapsed_time = elapsed_time.nanoseconds * 1e-9
+            # elapsed_time = t0_loop - t0
+            # elapsed_time = elapsed_time.nanoseconds * 1e-9
+            elapsed_time = time.time() - t0
 
             if elapsed_time > duration:
                 self.get_logger().info(f"goto finished")
@@ -269,7 +278,15 @@ class GotoActionServer(Node):
                 feedback_msg.feedback.time_to_completion = duration - elapsed_time
                 goal_handle.publish_feedback(feedback_msg)
 
-            self.rate.sleep()
+            # self.rate.sleep()  # Slowly the output freq drops with this...
+
+            # Calculate the time to sleep to achieve the desired frequency
+            # elapsed_loop = self.get_clock().now() - t0
+            # elapsed_loop = elapsed_loop.nanoseconds * 1e-9
+            # sleep_duration = max(0, dt - elapsed_loop)
+            # # TODO do better. But Rate() won't work well in this context.
+            # time.sleep(sleep_duration)
+            time.sleep(max(0, dt - (time.time() - t0_loop)))
 
         return "finished"
 
@@ -295,7 +312,7 @@ class GotoActionServer(Node):
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         mode = goto_request.mode
-        sampling_freq = goto_request.sampling_freq
+        # sampling_freq = goto_request.sampling_freq # Not used anymore TODO change message
         safety_on = goto_request.safety_on
 
         if mode == "linear":
@@ -342,7 +359,6 @@ class GotoActionServer(Node):
             joints,
             duration,
             goal_handle,
-            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
@@ -359,7 +375,7 @@ class GotoActionServer(Node):
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end"
         )
-
+        self.execution_ongoing.set()
         return result
 
 
