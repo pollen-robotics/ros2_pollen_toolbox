@@ -36,11 +36,13 @@ class CentralJointStateHandler(Node):
             callback_group=shared_callback_group,
         )
         self.publish_lock = threading.Lock()
+        self.active_goals_lock = threading.Lock()
+        self.active_goals = 0
+
         self.frequency = 150.0
 
         self.joint_state = {}
         self.joint_state_ready = Event()
-        self.command_ready = Event()
 
         # I'd rather have this than the locks for something that happens only once at startup
         while not self.joint_state_ready.is_set():
@@ -52,6 +54,18 @@ class CentralJointStateHandler(Node):
         self.timer = self.create_timer(
             1.0 / self.frequency, self.publish_dynamic_joint_commands
         )
+
+    def increment_active_goals(self):
+        with self.active_goals_lock:
+            self.active_goals += 1
+
+    def decrement_active_goals(self):
+        with self.active_goals_lock:
+            self.active_goals -= 1
+
+    def has_active_goals(self):
+        with self.active_goals_lock:
+            return self.active_goals > 0
 
     def on_joint_state(self, state: JointState):
         """Retreive the joint state from /joint_states."""
@@ -82,11 +96,10 @@ class CentralJointStateHandler(Node):
 
     def publish_dynamic_joint_commands(self):
         # Publish only if there is a new command
-        if self.command_ready.is_set():
+        if self.has_active_goals:
             self.dynamic_joint_commands.header.stamp = self.get_clock().now().to_msg()
             with self.publish_lock:
                 self.dynamic_joint_commands_pub.publish(self.dynamic_joint_commands)
-                self.command_ready.clear()
 
 
 class GotoActionServer(Node):
@@ -148,8 +161,10 @@ class GotoActionServer(Node):
         while True:
             goal_handle = self._goal_queue.get()
             self.execution_ongoing.clear()
+            self.joint_state_handler.increment_active_goals()
             goal_handle.execute()
             self.execution_ongoing.wait()
+            self.joint_state_handler.decrement_active_goals()
 
     def check(self):
         pass
@@ -226,7 +241,6 @@ class GotoActionServer(Node):
                 self.joint_state_handler.dynamic_joint_commands.interface_values[
                     idx
                 ].values[0] = p
-            self.joint_state_handler.command_ready.set()
 
     def get_joint_indices(self, joints):
         indices = []
