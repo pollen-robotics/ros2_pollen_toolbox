@@ -20,7 +20,9 @@ setup(
     entry_points={
         "console_scripts": [
             "goto_server = pollen_goto.goto_action_server:main",
+            "goto_minimalistic = pollen_goto.goto_minimalistic:main",
             "goto_client_test = pollen_goto.goto_action_client:main",
+            "goto_client_minimalistic = pollen_goto.goto_client_minimalistic:main",
         ],
     },
 )
