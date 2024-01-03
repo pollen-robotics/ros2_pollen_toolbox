@@ -40,6 +40,7 @@ class CentralJointStateHandler(Node):
 
         self.joint_state = {}
         self.joint_state_ready = Event()
+        self.command_ready = Event()
 
         # I'd rather have this than the locks for something that happens only once at startup
         while not self.joint_state_ready.is_set():
@@ -80,9 +81,12 @@ class CentralJointStateHandler(Node):
         return cmd_msg
 
     def publish_dynamic_joint_commands(self):
-        self.dynamic_joint_commands.header.stamp = self.get_clock().now().to_msg()
-        with self.publish_lock:
-            self.dynamic_joint_commands_pub.publish(self.dynamic_joint_commands)
+        # Publish only if there is a new command
+        if self.command_ready.is_set():
+            self.dynamic_joint_commands.header.stamp = self.get_clock().now().to_msg()
+            with self.publish_lock:
+                self.dynamic_joint_commands_pub.publish(self.dynamic_joint_commands)
+                self.command_ready.clear()
 
 
 class GotoActionServer(Node):
@@ -222,6 +226,7 @@ class GotoActionServer(Node):
                 self.joint_state_handler.dynamic_joint_commands.interface_values[
                     idx
                 ].values[0] = p
+            self.joint_state_handler.command_ready.set()
 
     def get_joint_indices(self, joints):
         indices = []
