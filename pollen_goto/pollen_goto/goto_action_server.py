@@ -96,7 +96,7 @@ class CentralJointStateHandler(Node):
 
     def publish_dynamic_joint_commands(self):
         # Publish only if there is a new command
-        if self.has_active_goals:
+        if self.has_active_goals():
             self.dynamic_joint_commands.header.stamp = self.get_clock().now().to_msg()
             with self.publish_lock:
                 self.dynamic_joint_commands_pub.publish(self.dynamic_joint_commands)
