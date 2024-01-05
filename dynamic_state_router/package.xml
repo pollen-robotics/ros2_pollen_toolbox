@@ -3,9 +3,9 @@
 <package format="3">
   <name>dynamic_state_router</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROS2 node to simplify the use of forward controllers</description>
   <maintainer email="contact@pollen-robotics.com">Pollen Robotics</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache License 2.0</license>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

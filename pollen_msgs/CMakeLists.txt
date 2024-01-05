@@ -23,10 +23,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GraspPose.msg"
   "msg/ReachableGraspTripletArray.msg"
   "msg/GraspPoseArray.msg"
-  "msg/TrajectoryResult.msg"
-  "msg/TrajectoryFeedback.msg"
+  "msg/GotoFeedback.msg"
+  "msg/GotoRequest.msg"
+  "msg/GotoResult.msg"
 
-  "action/GotoTrajectory.action"
+  "action/Goto.action"
 
   "srv/GetDynamicState.srv"
   "srv/GetInverseKinematics.srv"

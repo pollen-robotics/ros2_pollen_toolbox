@@ -1,5 +1,0 @@
-trajectory_msgs/JointTrajectory trajectory
----
-pollen_msgs/TrajectoryResult result
----
-pollen_msgs/TrajectoryFeedback feedback
