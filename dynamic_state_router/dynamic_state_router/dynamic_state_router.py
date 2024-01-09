@@ -232,6 +232,7 @@ class DynamicStateRouterNode(Node):
                     msg.name.append(joint)
                     msg.opening.append(value)
 
+        # TODO publish here to smartgripper node
         self.gripper_pub.publish(msg)
 
     def handle_pid_commands(self, commands):
