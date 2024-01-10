@@ -27,6 +27,7 @@ from .kdl_kinematics import (
     ros_pose_to_matrix,
 )
 
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
@@ -52,6 +53,14 @@ class PollenKdlKinematics(LifecycleNode):
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
+
+        # High frequency QoS profile
+        high_freq_qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
+            history=HistoryPolicy.KEEP_LAST,            # Keeps only a fixed number of messages
+            depth=1,                                    # Minimal depth, for the latest message
+            # Other QoS settings can be adjusted as needed
+        )
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
@@ -93,7 +102,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
                     topic=f"/{arm}/target_pose",
-                    qos_profile=5,
+                    qos_profile=high_freq_qos_profile,
                     callback=partial(
                         self.on_target_pose,
                         name=arm,
