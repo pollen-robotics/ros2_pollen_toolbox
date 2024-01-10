@@ -61,7 +61,7 @@ class PollenKdlKinematics(LifecycleNode):
             depth=1,                                    # Minimal depth, for the latest message
             # Other QoS settings can be adjusted as needed
         )
-
+        
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
@@ -118,7 +118,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.averaged_target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
                     topic=f"/{arm}/averaged_target_pose",
-                    qos_profile=5,
+                    qos_profile=high_freq_qos_profile,
                     callback=partial(
                         self.on_averaged_target_pose,
                         name=arm,
@@ -180,7 +180,7 @@ class PollenKdlKinematics(LifecycleNode):
             sub = self.create_subscription(
                 msg_type=PoseStamped,
                 topic="/head/target_pose",
-                qos_profile=5,
+                qos_profile=high_freq_qos_profile,
                 callback=partial(
                     self.on_target_pose,
                     name="head",
