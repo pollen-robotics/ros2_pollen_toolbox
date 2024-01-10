@@ -18,9 +18,22 @@ from pollen_msgs.msg import Gripper
 
 from .gripper_state import GripperState, DT
 
+deg2rad = np.pi/180.0
 # Gripper OPEN/CLOSE position (in rads)
-OPEN_POSITION = -1.50
-CLOSE_POSITION = 0.0
+R_OPEN_POSITION = 130*deg2rad
+R_CLOSE_POSITION = -10*deg2rad 
+L_OPEN_POSITION = -86*deg2rad
+L_CLOSE_POSITION = 2.51*deg2rad 
+
+# dxl_io.set_goal_position({11:130}) -> Open on right
+# dxl_io.set_goal_position({11:-10}) -> Close on right
+
+# Left :
+# >>> dxl_io.get_angle_limit([12])
+# ((-86.02, 2.51),)
+# xl_io.set_goal_position({12:-86}) -> open
+# 2.51 -> close
+
 
 
 class GripperSafeController(Node):
@@ -67,17 +80,16 @@ class GripperSafeController(Node):
         self.gripper_states = {
             name: GripperState(
                 name,
-                is_direct=True,  # name.startswith("r"),
+                is_direct=name.startswith("l"),
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
             )
             for name, value in self.grippers.items()
         }
         self.limits = {}
-        lower, upper = OPEN_POSITION, CLOSE_POSITION
         for name, state in self.gripper_states.items():
-            open_pos = lower if state.is_direct else -upper
-            close_pos = upper if state.is_direct else -lower
+            open_pos = L_OPEN_POSITION if state.is_direct else R_OPEN_POSITION
+            close_pos = L_CLOSE_POSITION if state.is_direct else R_CLOSE_POSITION
             self.limits[name] = (open_pos, close_pos)
         self.logger.info(f"Setup done, basic state: {self.gripper_states} with limits {self.limits}")
 
@@ -124,8 +136,11 @@ class GripperSafeController(Node):
                 continue
 
             open_pos, close_pos = self.limits[name]
-            opening = close_pos + opening * (open_pos - close_pos)
-            goal_pos = np.clip(opening, open_pos, close_pos)
+            goal_pos = close_pos + opening * (open_pos - close_pos)
+            if open_pos < close_pos:
+                goal_pos = np.clip(goal_pos, open_pos, close_pos)
+            else :
+                goal_pos = np.clip(goal_pos, close_pos, open_pos)            
 
             self.grippers[name]["user_requested_goal_position"] = goal_pos
 
