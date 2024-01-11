@@ -143,7 +143,7 @@ class TeleopApp:
     #     asyncio.ensure_future(send_command())
 
 
-    def get_arm_cartesian_goal(self, x: float, y: float, z: float) -> None:
+    def get_arm_cartesian_goal(self, x: float, y: float, z: float, partid=1) -> None:
         goal = np.array(
             [
                 [0, 0, 1, x],
@@ -153,7 +153,7 @@ class TeleopApp:
             ]
         )
         return ArmCartesianGoal(
-            id={"id": 1, "name": "r_arm"},
+            id={"id": partid, "name": "r_arm"},
             goal_pose=Matrix4x4(data=goal.flatten().tolist()),
             duration=FloatValue(value=1.0),
         )
@@ -165,12 +165,15 @@ class TeleopApp:
             fixed_x = 1  # Fixed x-coordinate
             center_y, center_z = 0, 0  # Center of the circle in y-z plane
             num_steps = 200  # Number of steps to complete the circle
-            frequency = 500  # Update frequency in Hz
+            frequency = 2500  # Update frequency in Hz
             step = 0  # Current step
+            circle_period = 3
             # with open(self.fifo_path, "w") as fifo:
-
+            t0 = time.time()
             while True:
                 angle = 2 * np.pi * (step / num_steps)
+                angle = 2 * np.pi * (time.time() - t0) / circle_period
+                print(angle)
                 step += 1
                 if step >= num_steps:
                     step = 0
@@ -185,6 +188,33 @@ class TeleopApp:
                     ],
                 )
                 channel.send(commands.SerializeToString())
+
+                commands = AnyCommands(
+                    commands=[
+                        AnyCommand(
+                            arm_command=ArmCommand(arm_cartesian_goal=self.get_arm_cartesian_goal(fixed_x, y, z, partid=2 )),
+                        ),
+                    ],
+                )
+                channel.send(commands.SerializeToString())
+
+                target = 0.5 - 0.5 * np.sin(2 * np.pi * 1 * time.time())
+
+                commands = AnyCommands(
+                    commands=[
+                        AnyCommand(
+                            hand_command=HandCommand(
+                                hand_goal=HandPositionRequest(
+                                    id=self.connection.reachy.r_hand.part_id,
+                                    position=HandPosition(parallel_gripper=ParallelGripperPosition(position=target)),
+                                ),
+                            ),
+                        ),
+                    ],
+                )
+                channel.send(commands.SerializeToString())
+
+
                 # timestamp = time.perf_counter_ns()
                 # fifo.write(f"{timestamp}\n")
 
