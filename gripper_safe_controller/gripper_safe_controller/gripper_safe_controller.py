@@ -1,22 +1,17 @@
+import time
+from threading import Event, Thread
 from typing import Dict
 
-import time
-import yaml
-from threading import Event, Thread
-
 import numpy as np
-
 import rclpy
-from rclpy.node import Node
-
+import yaml
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from pollen_msgs.msg import Gripper
+from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 
-from pollen_msgs.msg import Gripper
-
-
-from .gripper_state import GripperState, DT
+from .gripper_state import DT, GripperState
 
 deg2rad = np.pi/180.0
 # Gripper OPEN/CLOSE position (in rads)
