@@ -1,39 +1,24 @@
+import time
+from threading import Event, Thread
 from typing import Dict
 
-import time
-import yaml
-from threading import Event, Thread
-
 import numpy as np
-
 import rclpy
-from rclpy.node import Node
-
+import yaml
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 
 from pollen_msgs.msg import Gripper
 
+from .gripper_state import DT, GripperState
 
-from .gripper_state import GripperState, DT
-
-deg2rad = np.pi/180.0
 # Gripper OPEN/CLOSE position (in rads)
-R_OPEN_POSITION = 130*deg2rad
-R_CLOSE_POSITION = -10*deg2rad 
-L_OPEN_POSITION = -86*deg2rad
-L_CLOSE_POSITION = 2.51*deg2rad 
-
-# dxl_io.set_goal_position({11:130}) -> Open on right
-# dxl_io.set_goal_position({11:-10}) -> Close on right
-
-# Left :
-# >>> dxl_io.get_angle_limit([12])
-# ((-86.02, 2.51),)
-# xl_io.set_goal_position({12:-86}) -> open
-# 2.51 -> close
-
+R_OPEN_POSITION = np.deg2rad(130)
+R_CLOSE_POSITION = np.deg2rad(-10)
+L_OPEN_POSITION = np.deg2rad(-86)
+L_CLOSE_POSITION = np.deg2rad(2.51)
 
 
 class GripperSafeController(Node):
@@ -91,9 +76,14 @@ class GripperSafeController(Node):
             open_pos = L_OPEN_POSITION if state.is_direct else R_OPEN_POSITION
             close_pos = L_CLOSE_POSITION if state.is_direct else R_CLOSE_POSITION
             self.limits[name] = (open_pos, close_pos)
-        self.logger.info(f"Setup done, basic state: {self.gripper_states} with limits {self.limits}")
+        self.logger.info(
+            f"Setup done, basic state: {self.gripper_states} with limits {self.limits}"
+        )
 
-        self.last_grippers_pid = {name: (np.nan, np.nan, np.nan) for name, state in self.gripper_states.items()}
+        self.last_grippers_pid = {
+            name: (np.nan, np.nan, np.nan)
+            for name, state in self.gripper_states.items()
+        }
 
         # Gripper command publisher
         self.gripper_forward_publisher = self.create_publisher(
@@ -139,8 +129,8 @@ class GripperSafeController(Node):
             goal_pos = close_pos + opening * (open_pos - close_pos)
             if open_pos < close_pos:
                 goal_pos = np.clip(goal_pos, open_pos, close_pos)
-            else :
-                goal_pos = np.clip(goal_pos, close_pos, open_pos)            
+            else:
+                goal_pos = np.clip(goal_pos, close_pos, open_pos)
 
             self.grippers[name]["user_requested_goal_position"] = goal_pos
 
@@ -171,7 +161,9 @@ class GripperSafeController(Node):
         for name, gripper_state in self.gripper_states.items():
             gripper_state.update(
                 new_present_position=self.grippers[name]["present_position"],
-                new_user_requested_goal_position=self.grippers[name]["user_requested_goal_position"],
+                new_user_requested_goal_position=self.grippers[name][
+                    "user_requested_goal_position"
+                ],
             )
 
         self.publish_goals()
@@ -225,7 +217,10 @@ class GripperSafeController(Node):
                 if "gripper" not in k:
                     continue
                 try:
-                    if v["type"] == "forward_command_controller/ForwardCommandController":
+                    if (
+                        v["type"]
+                        == "forward_command_controller/ForwardCommandController"
+                    ):
                         forward_controllers.append(k)
                 except (KeyError, TypeError):
                     pass
