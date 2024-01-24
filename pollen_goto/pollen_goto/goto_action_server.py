@@ -1,4 +1,3 @@
-import collections
 import threading
 import time
 from queue import Queue
@@ -7,12 +6,15 @@ from threading import Event
 import numpy as np
 import rclpy
 from control_msgs.msg import DynamicJointState, InterfaceValue
-from pollen_msgs.action import Goto
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.callback_groups import (
+    MutuallyExclusiveCallbackGroup,
+)  # ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+
+from pollen_msgs.action import Goto
 
 from .interpolation import InterpolationMode
 
