@@ -91,7 +91,10 @@ class TeleopApp:
             # self.handle_state_channel(data_channel)
             data_channel.connect("on-message-data", self.handle_state_channel)
         elif data_channel.get_property("label").startswith("reachy_command"):
-            self.ensure_send_command(data_channel)
+            # self.ensure_send_command(data_channel)
+            asyncio.run_coroutine_threadsafe(
+                self.ensure_send_command(data_channel), self.signaling._asyncloop
+            )
         elif data_channel.get_property("label") == "service":
             data_channel.connect("on-message-data", self.on_service_message)
             self.setup_connection(data_channel)
@@ -215,7 +218,7 @@ class TeleopApp:
             duration=FloatValue(value=1.0),
         )
 
-    def ensure_send_command(self, data_channel, freq: float = 100) -> None:
+    async def ensure_send_command(self, data_channel, freq: float = 100) -> None:
         radius = 0.5  # Circle radius
         fixed_x = 1  # Fixed x-coordinate
         center_y, center_z = 0, 0  # Center of the circle in y-z plane
@@ -225,10 +228,15 @@ class TeleopApp:
         circle_period = 3
         # with open(self.fifo_path, "w") as fifo:
         t0 = time.time()
+        last_freq_counter = 0
+        init = False
+        freq_rates = []
+        last_freq_update = time.time()
+
         while True:
             angle = 2 * np.pi * (step / num_steps)
             angle = 2 * np.pi * (time.time() - t0) / circle_period
-            print(angle)
+            # print(angle)
             step += 1
             if step >= num_steps:
                 step = 0
@@ -250,7 +258,40 @@ class TeleopApp:
             byte_data = commands.SerializeToString()
             gbyte_data = GLib.Bytes.new(byte_data)
             data_channel.send_data(gbyte_data)
-            time.sleep(1 / frequency)
+            # time.sleep(1 / frequency)
+
+            last_freq_counter += 1
+            now = time.time()
+            if now - last_freq_update > 1:
+                current_freq_rate = int(last_freq_counter / (now - last_freq_update))
+
+                self.logger.info(f"Freq {current_freq_rate} Hz")
+
+                if init:
+                    freq_rates.append(current_freq_rate)
+                    if len(freq_rates) > 10000:
+                        freq_rates.pop(0)
+                    mean_freq_rate = sum(freq_rates) / len(freq_rates)
+                    self.logger.info(f"[MEAN] Freq {mean_freq_rate} Hz")
+                    self.logger.info(
+                        f'buffered {data_channel.get_property("buffered-amount")}'
+                    )
+                    self.logger.info(
+                        f'maxlife {data_channel.get_property("max-packet-lifetime")}'
+                    )
+                    self.logger.info(
+                        f'maxret {data_channel.get_property("max-retransmits")}'
+                    )
+                    self.logger.info(f'prio {data_channel.get_property("priority")}')
+                    self.logger.info(f'proto {data_channel.get_property("protocol")}')
+                else:
+                    init = True
+                # Calculate mean values
+
+                last_freq_counter = 0
+                last_freq_update = now
+
+            await asyncio.sleep(1.0 / frequency)
 
     """
     def ensure_send_command(self, channel: RTCDataChannel, freq: float = 100) -> None:
