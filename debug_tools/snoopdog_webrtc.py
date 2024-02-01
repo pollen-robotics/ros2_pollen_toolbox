@@ -86,15 +86,10 @@ class TeleopApp:
         self.logger.info(
             f'Joined new data channel: {data_channel.get_property("label")}'
         )
-        # data_channel.connect("on-message-string", on_data_channel_message)
         if data_channel.get_property("label").startswith("reachy_state"):
-            # self.handle_state_channel(data_channel)
             data_channel.connect("on-message-data", self.handle_state_channel)
         elif data_channel.get_property("label").startswith("reachy_command"):
-            # self.ensure_send_command(data_channel)
-            asyncio.run_coroutine_threadsafe(
-                self.ensure_send_command(data_channel), self.signaling._asyncloop
-            )
+            asyncio.to_thread(self.ensure_send_command(data_channel))
         elif data_channel.get_property("label") == "service":
             data_channel.connect("on-message-data", self.on_service_message)
             self.setup_connection(data_channel)
@@ -118,7 +113,7 @@ class TeleopApp:
                     update_frequency=100,
                 )
             )
-            # data_channel.send_string(req.SerializeToString())
+
             byte_data = req.SerializeToString()
             gbyte_data = GLib.Bytes.new(byte_data)
             data_channel.send_data(gbyte_data)
@@ -130,50 +125,9 @@ class TeleopApp:
         req = ServiceRequest(
             get_reachy=GetReachy(),
         )
-        # data_channel.send_data(req.SerializeToString())
         byte_data = req.SerializeToString()
         gbyte_data = GLib.Bytes.new(byte_data)
         data_channel.send_data(gbyte_data)
-
-    """
-    async def setup_connection(self, channel: RTCDataChannel) -> None:
-        @channel.on("message")  # type: ignore[misc]
-        def on_service_message(message: bytes) -> None:
-            response = ServiceResponse()
-            response.ParseFromString(message)
-
-            if response.HasField("connection_status"):
-                self.connection = response.connection_status
-                self.connected.set()
-
-            if response.HasField("error"):
-                print(f"Received error message: {response.error}")
-
-        # Ask for Reachy description (id, present parts, etc.)
-        req = ServiceRequest(
-            get_reachy=GetReachy(),
-        )
-        channel.send(req.SerializeToString())
-        await self.connected.wait()
-        self.logger.info(f"Got reachy: {self.connection.reachy}")
-
-        # Then, Request for state stream update and start sending commands
-        req = ServiceRequest(
-            connect=Connect(
-                reachy_id=self.connection.reachy.id,
-                update_frequency=100,
-            )
-        )
-        channel.send(req.SerializeToString())
-    """
-    """
-    def handle_state_channel(self, channel: RTCDataChannel) -> None:
-        @channel.on("message")  # type: ignore[misc]
-        def on_message(message: bytes) -> None:
-            reachy_state = ReachyState()
-            reachy_state.ParseFromString(message)
-            self.reachy_state = reachy_state
-    """
 
     def handle_state_channel(self, data_channel, data: GLib.Bytes) -> None:  # type: ignore[no-untyped-def]
         reachy_state = ReachyState()
@@ -218,12 +172,12 @@ class TeleopApp:
             duration=FloatValue(value=1.0),
         )
 
-    async def ensure_send_command(self, data_channel, freq: float = 100) -> None:
+    def ensure_send_command(self, data_channel, freq: float = 100) -> None:
         radius = 0.5  # Circle radius
         fixed_x = 1  # Fixed x-coordinate
         center_y, center_z = 0, 0  # Center of the circle in y-z plane
         num_steps = 200  # Number of steps to complete the circle
-        frequency = 10000  # Update frequency in Hz
+        frequency = 1000  # Update frequency in Hz
         step = 0  # Current step
         circle_period = 3
         # with open(self.fifo_path, "w") as fifo:
@@ -254,11 +208,9 @@ class TeleopApp:
                     ),
                 ],
             )
-            # data_channel.send_string(commands.SerializeToString())
             byte_data = commands.SerializeToString()
             gbyte_data = GLib.Bytes.new(byte_data)
             data_channel.send_data(gbyte_data)
-            # time.sleep(1 / frequency)
 
             last_freq_counter += 1
             now = time.time()
@@ -273,17 +225,6 @@ class TeleopApp:
                         freq_rates.pop(0)
                     mean_freq_rate = sum(freq_rates) / len(freq_rates)
                     self.logger.info(f"[MEAN] Freq {mean_freq_rate} Hz")
-                    self.logger.info(
-                        f'buffered {data_channel.get_property("buffered-amount")}'
-                    )
-                    self.logger.info(
-                        f'maxlife {data_channel.get_property("max-packet-lifetime")}'
-                    )
-                    self.logger.info(
-                        f'maxret {data_channel.get_property("max-retransmits")}'
-                    )
-                    self.logger.info(f'prio {data_channel.get_property("priority")}')
-                    self.logger.info(f'proto {data_channel.get_property("protocol")}')
                 else:
                     init = True
                 # Calculate mean values
@@ -291,7 +232,8 @@ class TeleopApp:
                 last_freq_counter = 0
                 last_freq_update = now
 
-            await asyncio.sleep(1.0 / frequency)
+            # await asyncio.sleep(1.0 / frequency)
+            time.sleep(1.0 / frequency)
 
     """
     def ensure_send_command(self, channel: RTCDataChannel, freq: float = 100) -> None:
