@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">
+  <Domain id="any">
+      <General>
+          <!-- Disable multicast -->
+          <AllowMulticast>false</AllowMulticast>
+      </General>
+      <Discovery>
+          <ParticipantIndex>auto</ParticipantIndex>
+          <!-- Explicitly specify peers for discovery -->
+          <Peers>
+              <Peer Address="192.168.1.96"/> <!-- Replace with actual IP address -->
+              <Peer Address="192.168.1.42"/> <!-- Replace with another IP address if necessary -->
+              <!-- Add more peers as needed -->
+          </Peers>
+          <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      </Discovery>
+  </Domain>
+</CycloneDDS>
