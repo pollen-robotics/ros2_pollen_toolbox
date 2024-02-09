@@ -10,7 +10,6 @@ from typing import Callable, Optional
 
 import numpy as np
 
-
 InterpolationFunc = Callable[[float], np.ndarray]
 
 # Note: for these functions to behave correctly, motor positions should be monotonic. Meaning no "179->180->-180" transitions.
@@ -28,6 +27,8 @@ def linear(
     """Compute the linear interpolation function from starting position to goal position."""
 
     def f(t: float) -> np.ndarray:
+        if t > duration:
+            return goal_position
         return starting_position + (goal_position - starting_position) * t / duration
 
     return f
@@ -71,6 +72,8 @@ def minimum_jerk(
     coeffs = [a0, a1, a2, X[0], X[1], X[2]]
 
     def f(t: float) -> np.ndarray:
+        if t > duration:
+            return goal_position
         return np.sum([c * t**i for i, c in enumerate(coeffs)], axis=0)
 
     return f
@@ -80,6 +83,6 @@ class InterpolationMode(Enum):
     """Inteprolation Mode enumeration."""
 
     LINEAR: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = linear
-    MINIMUM_JERK: Callable[
-        [np.ndarray, np.ndarray, float], InterpolationFunc
-    ] = minimum_jerk
+    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = (
+        minimum_jerk
+    )

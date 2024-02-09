@@ -6,6 +6,7 @@ from threading import Event
 import numpy as np
 import rclpy
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from pollen_msgs.action import Goto
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import (
     MutuallyExclusiveCallbackGroup,
@@ -13,8 +14,6 @@ from rclpy.callback_groups import (
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-
-from pollen_msgs.action import Goto
 
 from .interpolation import InterpolationMode
 
@@ -267,6 +266,11 @@ class GotoActionServer(Node):
             elapsed_time = time.time() - t0
 
             if elapsed_time > duration:
+                # Send the last point to increase precision and break
+                # We're calling the traj_function on a time > duration on purpose,
+                # as it's coded to return the goal position when t > duration
+                point = traj_func(elapsed_time)
+                self.cmd_pub(joints, point)
                 self.get_logger().info(f"goto finished")
                 break
 
