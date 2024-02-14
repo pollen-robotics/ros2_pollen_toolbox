@@ -6,19 +6,21 @@ import numpy as np
 UPDATE_FREQ = 100  # Hz
 DT = 1 / UPDATE_FREQ
 
-MAX_TORQUE = 0.5
+MX28_TO_MX106_RATIO = 0.0*2.5/8.4 # With the MX-106, just staying where we are is enough...
+
+MAX_TORQUE = 0.5*MX28_TO_MX106_RATIO
 P_SAFE_CLOSE = 3.0
 P_DIRECT_CONTROL = 5.0
 
 HISTORY_LENGTH = 10
 SKIP_EARLY_DTS = 15
-MIN_MOVING_DIST = 0.004
-MAX_ERROR = np.deg2rad(10.0)
+MIN_MOVING_DIST = 0.02#0.004
+MAX_ERROR = np.deg2rad(3.0)#np.deg2rad(10.0)
 MOVING_SPEED = np.deg2rad(110)
 INC_PER_DT = DT * MOVING_SPEED
 
-MX28_A_GAIN = 3.0
-MX28_B_GAIN = 0.05
+MX28_A_GAIN = 3.0*MX28_TO_MX106_RATIO
+MX28_B_GAIN = 0.05*MX28_TO_MX106_RATIO
 
 
 class CollisionState(Enum):
@@ -35,12 +37,13 @@ class GripperState:
         name: str,
         is_direct: bool,
         present_position: float, user_requested_goal_position: float,
-        p: float = P_DIRECT_CONTROL, i: float = 0.0, d: float = 0.0,
+            p: float = P_DIRECT_CONTROL, i: float = 0.0, d: float = 0.0, logger=None,
     ) -> None:
 
         self.name = name
         self.is_direct = is_direct
 
+        self.logger = logger
         self.present_position = deque([present_position], HISTORY_LENGTH)
         self.user_requested_goal_position = deque([user_requested_goal_position], HISTORY_LENGTH)
 
@@ -108,9 +111,13 @@ class GripperState:
 
     def entering_collision(self) -> bool:
         if self.elapsed_dts_since_change_of_direction <= SKIP_EARLY_DTS:
+            if self.name.startswith("r"):
+                self.logger.info(f"STILL IN ELAPSED")
             return False
 
         filtered_error = np.mean(self.error)
+        if self.name.startswith("r"):
+            self.logger.info(f"name:{self.name}, filtered_error:{filtered_error}, MAX_ERROR:{MAX_ERROR}")
         return (
             (filtered_error > MAX_ERROR and self.user_requested_goal_position[-1] > self.present_position[-1])
             if self.is_direct
@@ -137,7 +144,7 @@ class GripperState:
                 if self.is_direct
                 else (self.present_position[0] - self.present_position[-1]) > MIN_MOVING_DIST)
         )
-
+        self.logger.info(f"user_request_to_release={user_request_to_release}, moving_again={moving_again}")
         return user_request_to_release or moving_again
 
     def has_changed_direction(self, new_goal_pos: float) -> bool:
@@ -162,6 +169,8 @@ class GripperState:
         model_offset = np.deg2rad(MX28_A_GAIN * MAX_TORQUE + MX28_B_GAIN / P_SAFE_CLOSE)
         if not self.is_direct:
             model_offset = -model_offset
+        if self.name.startswith("r"):
+            self.logger.info(f"model_offset={model_offset}, self.present_position[-1]={self.present_position[-1]}")
 
         return model_offset + self.present_position[-1]
 
