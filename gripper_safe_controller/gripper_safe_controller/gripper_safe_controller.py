@@ -166,8 +166,8 @@ class GripperSafeController(Node):
                     "user_requested_goal_position"
                 ],
             )
-            if name.startswith("r"):
-                self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
+            # if name.startswith("r"):
+            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
             
 
         self.publish_goals()

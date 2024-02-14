@@ -111,13 +111,13 @@ class GripperState:
 
     def entering_collision(self) -> bool:
         if self.elapsed_dts_since_change_of_direction <= SKIP_EARLY_DTS:
-            if self.name.startswith("r"):
-                self.logger.info(f"STILL IN ELAPSED")
+            # if self.name.startswith("r"):
+            #     self.logger.info(f"STILL IN ELAPSED")
             return False
 
         filtered_error = np.mean(self.error)
-        if self.name.startswith("r"):
-            self.logger.info(f"name:{self.name}, filtered_error:{filtered_error}, MAX_ERROR:{MAX_ERROR}")
+        # if self.name.startswith("r"):
+        #     self.logger.info(f"name:{self.name}, filtered_error:{filtered_error}, MAX_ERROR:{MAX_ERROR}")
         return (
             (filtered_error > MAX_ERROR and self.user_requested_goal_position[-1] > self.present_position[-1])
             if self.is_direct
@@ -144,7 +144,7 @@ class GripperState:
                 if self.is_direct
                 else (self.present_position[0] - self.present_position[-1]) > MIN_MOVING_DIST)
         )
-        self.logger.info(f"user_request_to_release={user_request_to_release}, moving_again={moving_again}")
+        # self.logger.info(f"user_request_to_release={user_request_to_release}, moving_again={moving_again}")
         return user_request_to_release or moving_again
 
     def has_changed_direction(self, new_goal_pos: float) -> bool:
@@ -169,8 +169,8 @@ class GripperState:
         model_offset = np.deg2rad(MX28_A_GAIN * MAX_TORQUE + MX28_B_GAIN / P_SAFE_CLOSE)
         if not self.is_direct:
             model_offset = -model_offset
-        if self.name.startswith("r"):
-            self.logger.info(f"model_offset={model_offset}, self.present_position[-1]={self.present_position[-1]}")
+        # if self.name.startswith("r"):
+        #     self.logger.info(f"model_offset={model_offset}, self.present_position[-1]={self.present_position[-1]}")
 
         return model_offset + self.present_position[-1]
 
