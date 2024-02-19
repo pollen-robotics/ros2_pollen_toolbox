@@ -3,31 +3,34 @@ from threading import Event
 from typing import List
 
 import numpy as np
-
-from scipy.spatial.transform import Rotation
-
-from .pose_averager import PoseAverager
-
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
+from reachy2_symbolic_ik.utils import angle_diff
+from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-from pollen_msgs.srv import (
-    GetForwardKinematics,
-    GetInverseKinematics,
-)
-
 from .kdl_kinematics import (
-    generate_solver,
     forward_kinematics,
+    generate_solver,
     inverse_kinematics,
     ros_pose_to_matrix,
 )
+from .pose_averager import PoseAverager
 
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+
+def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
+    position = homogeneous_matrix[:3, 3]
+    rotation_matrix = homogeneous_matrix[:3, :3]
+    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler(
+        "xyz", degrees=degrees
+    )
+    return position, euler_angles
+
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
@@ -53,15 +56,25 @@ class PollenKdlKinematics(LifecycleNode):
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
+        self.last_z = 0
+
+        self.symbolic_ik_r = SymbolicIK(
+            arm="r_arm",
+            upper_arm_size=0.28,
+            forearm_size=0.28,
+            gripper_size=0.10,
+            wrist_limit=45,
+            shoulder_orientation_offset=[10, 0, 15],
+        )
 
         # High frequency QoS profile
         high_freq_qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
-            history=HistoryPolicy.KEEP_LAST,            # Keeps only a fixed number of messages
-            depth=1,                                    # Minimal depth, for the latest message
+            history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
+            depth=1,  # Minimal depth, for the latest message
             # Other QoS settings can be adjusted as needed
         )
-        
+
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
@@ -270,6 +283,42 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
 
+        self.ik_joints = q0
+
+        if name.startswith("r"):
+            goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
+
+            if goal_position[2] < self.last_z:
+                self.logger.error(
+                    f"Z is decreasing! {goal_position[2]} < {self.last_z}"
+                )
+            else:
+                self.logger.info(f"Z is increasing! {goal_position[2]} > {self.last_z}")
+
+            self.last_z = goal_position[2]
+
+            goal_pose = np.array([goal_position, goal_orientation])
+            is_reachable, interval, theta_to_joints_func = (
+                self.symbolic_ik_r.is_reachable(goal_pose)
+            )
+            if is_reachable:
+                # Calculating the middle of the valid interval
+                angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
+                if angle_diff(interval[0], interval[1]) > 0:
+                    # self.logger.error(f"ANGLE DIFF > 0. Is everything ok?")
+                    angle = (
+                        angle_diff(interval[0], interval[1]) / 2 + interval[1] + np.pi
+                    )
+                else:
+                    angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
+
+                joints = theta_to_joints_func(angle)
+                q0 = joints
+                self.ik_joints = joints
+                # self.logger.info(f"\n{joints} (Pose reachable, using symbolic IK)")
+            else:
+                self.logger.info(f"Pose not reachable!!")
+
         error, sol = inverse_kinematics(
             self.ik_solver[name],
             q0=q0,
@@ -278,9 +327,11 @@ class PollenKdlKinematics(LifecycleNode):
         )
 
         # TODO: use error
-        response.success = True
+        response.success = is_reachable
         response.joint_position.name = self.get_chain_joints_name(self.chain[name])
-        response.joint_position.position = sol
+        response.joint_position.position = self.ik_joints  # sol
+
+        # self.logger.info(f"{sol} (KDL solution)")
 
         return response
 
