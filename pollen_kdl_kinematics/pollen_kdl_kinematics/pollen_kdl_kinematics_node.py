@@ -9,7 +9,7 @@ from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import angle_diff
+from reachy2_symbolic_ik.utils import angle_diff, get_best_continuous_theta
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
@@ -56,7 +56,6 @@ class PollenKdlKinematics(LifecycleNode):
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
-        self.last_z = 0
 
         self.symbolic_ik_r = SymbolicIK(
             arm="r_arm",
@@ -288,20 +287,12 @@ class PollenKdlKinematics(LifecycleNode):
         if name.startswith("r"):
             goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
 
-            if goal_position[2] < self.last_z:
-                self.logger.error(
-                    f"Z is decreasing! {goal_position[2]} < {self.last_z}"
-                )
-            else:
-                self.logger.info(f"Z is increasing! {goal_position[2]} > {self.last_z}")
-
-            self.last_z = goal_position[2]
-
             goal_pose = np.array([goal_position, goal_orientation])
             is_reachable, interval, theta_to_joints_func = (
                 self.symbolic_ik_r.is_reachable(goal_pose)
             )
             if is_reachable:
+                # V0 of the idea
                 # Calculating the middle of the valid interval
                 angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
                 if angle_diff(interval[0], interval[1]) > 0:
@@ -312,22 +303,27 @@ class PollenKdlKinematics(LifecycleNode):
                 else:
                     angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
 
-                joints = theta_to_joints_func(angle)
+                # V0.1 of the idea
+                # get_best_continuous_theta(goal_pose, interval, theta_to_joints_func)
+                # previous_theta: float, intervalle: npt.NDArray[np.float64], get_joints: Any, d_theta_max: float, arm: str
+
+                joints, elbow_position = theta_to_joints_func(angle)
                 q0 = joints
                 self.ik_joints = joints
                 # self.logger.info(f"\n{joints} (Pose reachable, using symbolic IK)")
             else:
                 self.logger.info(f"Pose not reachable!!")
 
-        error, sol = inverse_kinematics(
-            self.ik_solver[name],
-            q0=q0,
-            target_pose=M,
-            nb_joints=self.chain[name].getNrOfJoints(),
-        )
+        # error, sol = inverse_kinematics(
+        #     self.ik_solver[name],
+        #     q0=q0,
+        #     target_pose=M,
+        #     nb_joints=self.chain[name].getNrOfJoints(),
+        # )
 
         # TODO: use error
-        response.success = is_reachable
+
+        response.success = True  # is_reachable
         response.joint_position.name = self.get_chain_joints_name(self.chain[name])
         response.joint_position.position = self.ik_joints  # sol
 
