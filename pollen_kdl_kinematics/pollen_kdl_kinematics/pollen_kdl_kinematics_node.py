@@ -65,6 +65,9 @@ class PollenKdlKinematics(LifecycleNode):
             wrist_limit=45,
             shoulder_orientation_offset=[10, 0, 15],
         )
+        self.previous_theta = (
+            np.pi * 5 / 4
+        )  # a balanced position between elbow down and elbow at 90°
 
         # High frequency QoS profile
         high_freq_qos_profile = QoSProfile(
@@ -288,31 +291,22 @@ class PollenKdlKinematics(LifecycleNode):
             goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
 
             goal_pose = np.array([goal_position, goal_orientation])
+
             is_reachable, interval, theta_to_joints_func = (
                 self.symbolic_ik_r.is_reachable(goal_pose)
             )
             if is_reachable:
-                # V0 of the idea
-                # Calculating the middle of the valid interval
-                angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
-                if angle_diff(interval[0], interval[1]) > 0:
-                    # self.logger.error(f"ANGLE DIFF > 0. Is everything ok?")
-                    angle = (
-                        angle_diff(interval[0], interval[1]) / 2 + interval[1] + np.pi
-                    )
-                else:
-                    angle = angle_diff(interval[0], interval[1]) / 2 + interval[1]
-
-                # V0.1 of the idea
-                # get_best_continuous_theta(goal_pose, interval, theta_to_joints_func)
-                # previous_theta: float, intervalle: npt.NDArray[np.float64], get_joints: Any, d_theta_max: float, arm: str
-
-                joints, elbow_position = theta_to_joints_func(angle)
-                q0 = joints
-                self.ik_joints = joints
-                # self.logger.info(f"\n{joints} (Pose reachable, using symbolic IK)")
+                is_reachable, theta = get_best_continuous_theta(
+                    self.previous_theta,
+                    interval,
+                    theta_to_joints_func,
+                    0.02,
+                    self.symbolic_ik_r.arm,
+                )
+                self.previous_theta = theta
+                self.ik_joints, elbow_position = theta_to_joints_func(theta)
             else:
-                self.logger.info(f"Pose not reachable!!")
+                print("code ik no limit")
 
         # error, sol = inverse_kinematics(
         #     self.ik_solver[name],
