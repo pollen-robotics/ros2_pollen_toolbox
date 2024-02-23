@@ -124,6 +124,10 @@ class PollenKdlKinematics(LifecycleNode):
                     qos_profile=5,
                 )
 
+                if arm.startswith("l"):
+                    q0=[0.0,np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+                else :
+                    q0=[0.0,-np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
                 self.target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
                     topic=f"/{arm}/target_pose",
@@ -132,7 +136,9 @@ class PollenKdlKinematics(LifecycleNode):
                         self.on_target_pose,
                         name=arm,
                         # arm straight, with elbow at -90 (facing forward)
-                        q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+                        # q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+                        # The Coralie pose
+                        q0=q0,
                         forward_publisher=forward_position_pub,
                     ),
                 )
