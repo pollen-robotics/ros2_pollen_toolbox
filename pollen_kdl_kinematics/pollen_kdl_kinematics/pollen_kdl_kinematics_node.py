@@ -89,8 +89,13 @@ class PollenKdlKinematics(LifecycleNode):
                 forearm_size=0.28,
                 gripper_size=0.10,
                 wrist_limit=45,
-                shoulder_orientation_offset=[10, 0, 15],
+                # This is the "correct" stuff for alpha
+                # shoulder_orientation_offset=[10, 0, 15],
+                # This is the "wrong" values currently used by the alpha
+                shoulder_orientation_offset=[0, 0, 15],
+                shoulder_position=[-0.0479, -0.1913, 0.025],
             )
+            
 
             self.previous_theta[arm] = None
 
@@ -309,7 +314,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.previous_theta[name] = prefered_theta
 
             goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
-            # self.logger.warning(f"{name} goal_position: {goal_position}")
+            self.logger.warning(f"{name} goal_position: {goal_position}")
 
             goal_pose = np.array([goal_position, goal_orientation])
 
@@ -327,12 +332,12 @@ class PollenKdlKinematics(LifecycleNode):
                 )
                 self.previous_theta[name] = theta
                 self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                # self.logger.warning(
-                #     f"{name} Is reachable. Is truly reachable: {is_reachable}"
-                # )
+                self.logger.warning(
+                    f"{name} Is reachable. Is truly reachable: {is_reachable}"
+                )
 
             else:
-                # self.logger.warning(f"{name} Pose not reachable but doing our best")
+                self.logger.warning(f"{name} Pose not reachable but doing our best")
                 is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                     name
                 ].is_reachable_no_limits(goal_pose)
@@ -352,6 +357,9 @@ class PollenKdlKinematics(LifecycleNode):
                     )
             sol = self.ik_joints
         else:
+            self.logger.warning(
+                    f"{name} Used with KDL"
+                )
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
                 q0=q0,
