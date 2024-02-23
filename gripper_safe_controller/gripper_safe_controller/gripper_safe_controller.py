@@ -17,8 +17,8 @@ from .gripper_state import DT, GripperState
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)
 R_CLOSE_POSITION = np.deg2rad(-10)
-L_OPEN_POSITION = np.deg2rad(-86)
-L_CLOSE_POSITION = np.deg2rad(2.51)
+L_OPEN_POSITION = np.deg2rad(130)
+L_CLOSE_POSITION = np.deg2rad(-10)
 
 
 class GripperSafeController(Node):
@@ -65,9 +65,10 @@ class GripperSafeController(Node):
         self.gripper_states = {
             name: GripperState(
                 name,
-                is_direct=name.startswith("l"),
+                is_direct=False,#name.startswith("l"),
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
+                logger=self.logger,
             )
             for name, value in self.grippers.items()
         }
@@ -165,6 +166,9 @@ class GripperSafeController(Node):
                     "user_requested_goal_position"
                 ],
             )
+            # if name.startswith("r"):
+            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
+            
 
         self.publish_goals()
         self.publish_pids()
