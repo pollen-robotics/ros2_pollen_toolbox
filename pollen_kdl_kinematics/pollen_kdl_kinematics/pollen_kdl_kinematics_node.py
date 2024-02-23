@@ -296,6 +296,65 @@ class PollenKdlKinematics(LifecycleNode):
         response.pose.orientation.w = q[3]
 
         return response
+    
+    def symbolic_inverse_kinematics(self, name, M):
+        d_theta_max = 0.01
+
+        if name.startswith("r"):
+            prefered_theta = self.prefered_theta
+        else:
+            prefered_theta = np.pi - self.prefered_theta
+
+        if self.previous_theta[name] is None:
+            self.previous_theta[name] = prefered_theta
+            
+        self.logger.warning(f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}")
+
+        goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
+        self.logger.warning(f"{name} goal_position: {goal_position}")
+
+        goal_pose = np.array([goal_position, goal_orientation])
+
+        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
+            name
+        ].is_reachable(goal_pose)
+        if is_reachable:
+            is_reachable, theta = get_best_continuous_theta(
+                self.previous_theta[name],
+                interval,
+                theta_to_joints_func,
+                d_theta_max,
+                prefered_theta,
+                self.symbolic_ik_solver[name].arm,
+            )
+            self.previous_theta[name] = theta
+            self.ik_joints, elbow_position = theta_to_joints_func(theta)
+            self.logger.warning(
+                f"{name} Is reachable. Is truly reachable: {is_reachable}"
+            )
+
+        else:
+            self.logger.warning(f"{name} Pose not reachable but doing our best")
+            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
+                name
+            ].is_reachable_no_limits(goal_pose)
+            if is_reachable:
+                is_reachable, theta = tend_to_prefered_theta(
+                    self.previous_theta[name],
+                    interval,
+                    theta_to_joints_func,
+                    d_theta_max,
+                    goal_theta=prefered_theta,
+                )
+                self.previous_theta[name] = theta
+                self.ik_joints, elbow_position = theta_to_joints_func(theta)
+            else:
+                self.logger.warning(
+                    f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
+                )
+        sol = self.ik_joints
+        return sol, is_reachable
+        
 
     def inverse_kinematics_srv(
         self,
@@ -308,61 +367,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger.warning(f"IN inverse_kinematics_srv, name {name}")
         
         if "arm" in name:
-            self.ik_joints = q0
-
-            d_theta_max = 0.01
-
-            if name.startswith("r"):
-                prefered_theta = self.prefered_theta
-            else:
-                prefered_theta = np.pi - self.prefered_theta
-
-            if self.previous_theta[name] is None:
-                self.previous_theta[name] = prefered_theta
-
-            goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
-            self.logger.warning(f"{name} goal_position: {goal_position}")
-
-            goal_pose = np.array([goal_position, goal_orientation])
-
-            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                name
-            ].is_reachable(goal_pose)
-            if is_reachable:
-                is_reachable, theta = get_best_continuous_theta(
-                    self.previous_theta[name],
-                    interval,
-                    theta_to_joints_func,
-                    d_theta_max,
-                    prefered_theta,
-                    self.symbolic_ik_solver[name].arm,
-                )
-                self.previous_theta[name] = theta
-                self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                self.logger.warning(
-                    f"{name} Is reachable. Is truly reachable: {is_reachable}"
-                )
-
-            else:
-                self.logger.warning(f"{name} Pose not reachable but doing our best")
-                is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                    name
-                ].is_reachable_no_limits(goal_pose)
-                if is_reachable:
-                    is_reachable, theta = tend_to_prefered_theta(
-                        self.previous_theta[name],
-                        interval,
-                        theta_to_joints_func,
-                        d_theta_max,
-                        goal_theta=prefered_theta,
-                    )
-                    self.previous_theta[name] = theta
-                    self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                else:
-                    self.logger.warning(
-                        f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
-                    )
-            sol = self.ik_joints
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
             self.logger.warning(
                     f"{name} Used with KDL"
@@ -387,61 +392,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(msg.pose)
         
         if "arm" in name:
-            self.ik_joints = q0
-
-            d_theta_max = 0.01
-
-            if name.startswith("r"):
-                prefered_theta = self.prefered_theta
-            else:
-                prefered_theta = np.pi - self.prefered_theta
-
-            if self.previous_theta[name] is None:
-                self.previous_theta[name] = prefered_theta
-
-            goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
-            self.logger.warning(f"{name} goal_position: {goal_position}")
-
-            goal_pose = np.array([goal_position, goal_orientation])
-
-            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                name
-            ].is_reachable(goal_pose)
-            if is_reachable:
-                is_reachable, theta = get_best_continuous_theta(
-                    self.previous_theta[name],
-                    interval,
-                    theta_to_joints_func,
-                    d_theta_max,
-                    prefered_theta,
-                    self.symbolic_ik_solver[name].arm,
-                )
-                self.previous_theta[name] = theta
-                self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                self.logger.warning(
-                    f"{name} Is reachable. Is truly reachable: {is_reachable}"
-                )
-
-            else:
-                self.logger.warning(f"{name} Pose not reachable but doing our best")
-                is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                    name
-                ].is_reachable_no_limits(goal_pose)
-                if is_reachable:
-                    is_reachable, theta = tend_to_prefered_theta(
-                        self.previous_theta[name],
-                        interval,
-                        theta_to_joints_func,
-                        d_theta_max,
-                        goal_theta=prefered_theta,
-                    )
-                    self.previous_theta[name] = theta
-                    self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                else:
-                    self.logger.warning(
-                        f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
-                    )
-            sol = self.ik_joints
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
             self.logger.warning(
                     f"{name} Used with KDL"
