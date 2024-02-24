@@ -321,7 +321,7 @@ class PollenKdlKinematics(LifecycleNode):
             name
         ].is_reachable(goal_pose)
         if is_reachable:
-            is_reachable, theta = get_best_continuous_theta(
+            is_reachable, theta, state = get_best_continuous_theta(
                 self.previous_theta[name],
                 interval,
                 theta_to_joints_func,
@@ -332,7 +332,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.previous_theta[name] = theta
             self.ik_joints, elbow_position = theta_to_joints_func(theta)
             self.logger.warning(
-                f"{name} Is reachable. Is truly reachable: {is_reachable}"
+                f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
             )
 
         else:
@@ -351,9 +351,18 @@ class PollenKdlKinematics(LifecycleNode):
                 self.previous_theta[name] = theta
                 self.ik_joints, elbow_position = theta_to_joints_func(theta)
             else:
-                self.logger.warning(
+                self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
                 )
+                raise RuntimeError(
+                    "Pose not reachable in symbolic IK. We crash on purpose while we are on the debug sessions. This piece of code should disapiear after that."
+                )
+        self.logger.warning(f"{name} new_theta: {theta}")
+        if name.startswith("l"):
+            self.logger.warning(
+                f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
+            )
+
         sol = self.ik_joints
         return sol, is_reachable
 
@@ -365,12 +374,9 @@ class PollenKdlKinematics(LifecycleNode):
     ) -> GetInverseKinematics.Response:
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
-        self.logger.warning(f"IN inverse_kinematics_srv, name {name}")
-
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
-            self.logger.warning(f"{name} Used with KDL")
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
                 q0=q0,
@@ -389,11 +395,9 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
-
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
-            self.logger.warning(f"{name} Used with KDL")
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
                 q0=q0,
@@ -409,22 +413,21 @@ class PollenKdlKinematics(LifecycleNode):
         forward_publisher.publish(msg)
 
     def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
-        self.logger.warning(f"CALLING ON AVERAGED TARGET POSE {name}")
-
         self.averaged_pose[name].append(msg.pose)
         avg_pose = self.averaged_pose[name].mean()
 
         M = ros_pose_to_matrix(avg_pose)
-
-        error, sol = inverse_kinematics(
-            self.ik_solver[name],
-            q0=q0,
-            target_pose=M,
-            nb_joints=self.chain[name].getNrOfJoints(),
-        )
+        if "arm" in name:
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+        else:
+            error, sol = inverse_kinematics(
+                self.ik_solver[name],
+                q0=q0,
+                target_pose=M,
+                nb_joints=self.chain[name].getNrOfJoints(),
+            )
 
         # TODO: check error
-
         current_position = np.array(self.get_current_position(self.chain[name]))
 
         vel = np.array(sol) - current_position
