@@ -95,7 +95,6 @@ class PollenKdlKinematics(LifecycleNode):
                 shoulder_orientation_offset=[0, 0, 15],
                 shoulder_position=[-0.0479, -0.1913, 0.025],
             )
-            
 
             self.previous_theta[arm] = None
 
@@ -130,9 +129,9 @@ class PollenKdlKinematics(LifecycleNode):
                 )
 
                 if arm.startswith("l"):
-                    q0=[0.0,np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
-                else :
-                    q0=[0.0,-np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+                    q0 = [0.0, np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+                else:
+                    q0 = [0.0, -np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
                 self.target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
                     topic=f"/{arm}/target_pose",
@@ -296,7 +295,7 @@ class PollenKdlKinematics(LifecycleNode):
         response.pose.orientation.w = q[3]
 
         return response
-    
+
     def symbolic_inverse_kinematics(self, name, M):
         d_theta_max = 0.01
 
@@ -307,10 +306,13 @@ class PollenKdlKinematics(LifecycleNode):
 
         if self.previous_theta[name] is None:
             self.previous_theta[name] = prefered_theta
-            
-        self.logger.warning(f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}")
+
+        self.logger.warning(
+            f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
+        )
 
         goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
+
         self.logger.warning(f"{name} goal_position: {goal_position}")
 
         goal_pose = np.array([goal_position, goal_orientation])
@@ -354,7 +356,6 @@ class PollenKdlKinematics(LifecycleNode):
                 )
         sol = self.ik_joints
         return sol, is_reachable
-        
 
     def inverse_kinematics_srv(
         self,
@@ -365,13 +366,11 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
         self.logger.warning(f"IN inverse_kinematics_srv, name {name}")
-        
+
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
-            self.logger.warning(
-                    f"{name} Used with KDL"
-                )
+            self.logger.warning(f"{name} Used with KDL")
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
                 q0=q0,
@@ -390,13 +389,11 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
-        
+
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
         else:
-            self.logger.warning(
-                    f"{name} Used with KDL"
-                )
+            self.logger.warning(f"{name} Used with KDL")
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
                 q0=q0,
@@ -413,7 +410,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         self.logger.warning(f"CALLING ON AVERAGED TARGET POSE {name}")
-        
+
         self.averaged_pose[name].append(msg.pose)
         avg_pose = self.averaged_pose[name].mean()
 
