@@ -1,0 +1,542 @@
+from functools import partial
+from threading import Event
+from typing import List
+
+import numpy as np
+import rclpy
+from geometry_msgs.msg import PoseStamped
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
+from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
+from reachy2_symbolic_ik.utils import (
+    angle_diff,
+    get_best_continuous_theta,
+    tend_to_prefered_theta,
+)
+from scipy.spatial.transform import Rotation
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray, String
+
+from .kdl_kinematics import (
+    forward_kinematics,
+    generate_solver,
+    inverse_kinematics,
+    ros_pose_to_matrix,
+)
+from .pose_averager import PoseAverager
+
+
+def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
+    position = homogeneous_matrix[:3, 3]
+    rotation_matrix = homogeneous_matrix[:3, :3]
+    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler(
+        "xyz", degrees=degrees
+    )
+    return position, euler_angles
+
+
+class PollenKdlKinematics(LifecycleNode):
+    def __init__(self):
+        super().__init__("pollen_kdl_kinematics_node")
+        self.logger = self.get_logger()
+
+        self.urdf = self.retrieve_urdf()
+
+        # Listen to /joint_state to get current position
+        # used by averaged_target_pose
+        self._current_pos = {}
+        self.joint_state_sub = self.create_subscription(
+            msg_type=JointState,
+            topic="/joint_states",
+            qos_profile=5,
+            callback=self.on_joint_state,
+        )
+        self.joint_state_ready = Event()
+        self.wait_for_joint_state()
+
+        self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
+        self.fk_srv, self.ik_srv = {}, {}
+        self.target_sub, self.averaged_target_sub = {}, {}
+        self.averaged_pose = {}
+        self.max_joint_vel = {}
+
+        self.symbolic_ik_solver = {}
+
+        # High frequency QoS profile
+        high_freq_qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
+            history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
+            depth=1,  # Minimal depth, for the latest message
+            # Other QoS settings can be adjusted as needed
+        )
+
+        # Symbolic IK inits.
+        # A balanced position between elbow down and elbow at 90°
+        self.prefered_theta = 5 * np.pi / 4  # np.pi / 4
+        self.previous_theta = {}
+        self.previous_sol = {}
+
+        for prefix in ("l", "r"):
+            arm = f"{prefix}_arm"
+
+            chain, fk_solver, ik_solver = generate_solver(
+                self.urdf, "torso", f"{prefix}_arm_tip"
+            )
+
+            self.symbolic_ik_solver[arm] = SymbolicIK(
+                arm=arm,
+                upper_arm_size=0.28,
+                forearm_size=0.28,
+                gripper_size=0.10,
+                wrist_limit=45,
+                # This is the "correct" stuff for alpha
+                # shoulder_orientation_offset=[10, 0, 15],
+                # This is the "wrong" values currently used by the alpha
+                shoulder_orientation_offset=[0, 0, 15],
+                shoulder_position=[-0.0479, -0.1913, 0.025],
+            )
+
+            self.previous_theta[arm] = None
+            self.previous_sol[arm] = None
+
+            # We automatically loads the kinematics corresponding to the config
+            if chain.getNrOfJoints():
+                self.logger.info(f'Found kinematics chain for "{arm}"!')
+
+                for j in self.get_chain_joints_name(chain):
+                    self.logger.info(f"\t{j}")
+
+                # Create forward kinematics service
+                self.fk_srv[arm] = self.create_service(
+                    srv_type=GetForwardKinematics,
+                    srv_name=f"/{arm}/forward_kinematics",
+                    callback=partial(self.forward_kinematics_srv, name=arm),
+                )
+                self.logger.info(f'Adding service "{self.fk_srv[arm].srv_name}"...')
+
+                # Create inverse kinematics service
+                self.ik_srv[arm] = self.create_service(
+                    srv_type=GetInverseKinematics,
+                    srv_name=f"/{arm}/inverse_kinematics",
+                    callback=partial(self.inverse_kinematics_srv, name=arm),
+                )
+                self.logger.info(f'Adding service "{self.ik_srv[arm].srv_name}"...')
+
+                # Create cartesian control pub/subscription
+                forward_position_pub = self.create_publisher(
+                    msg_type=Float64MultiArray,
+                    topic=f"/{arm}_forward_position_controller/commands",
+                    qos_profile=5,
+                )
+
+                if arm.startswith("l"):
+                    q0 = [0.0, np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+                else:
+                    q0 = [0.0, -np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+                # TEMP !!!
+                if arm.startswith("l"):
+                    inverted_arm = "r_arm"
+                elif arm.startswith("r"):
+                    inverted_arm = "l_arm"
+                self.target_sub[arm] = self.create_subscription(
+                    msg_type=PoseStamped,
+                    topic=f"/{inverted_arm}/target_pose",
+                    qos_profile=high_freq_qos_profile,
+                    callback=partial(
+                        self.on_target_pose,
+                        name=inverted_arm,
+                        # arm straight, with elbow at -90 (facing forward)
+                        # q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+                        # The Coralie pose
+                        q0=q0,
+                        forward_publisher=forward_position_pub,
+                    ),
+                )
+                self.logger.info(
+                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
+                )
+
+                self.averaged_target_sub[arm] = self.create_subscription(
+                    msg_type=PoseStamped,
+                    topic=f"/{arm}/averaged_target_pose",
+                    qos_profile=high_freq_qos_profile,
+                    callback=partial(
+                        self.on_averaged_target_pose,
+                        name=arm,
+                        # arm straight, with elbow at -90 (facing forward)
+                        q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+                        forward_publisher=forward_position_pub,
+                    ),
+                )
+                self.averaged_pose[arm] = PoseAverager(window_length=1)
+                self.max_joint_vel[arm] = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+                self.logger.info(
+                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
+                )
+
+                self.chain[arm] = chain
+                self.fk_solver[arm] = fk_solver
+                self.ik_solver[arm] = ik_solver
+
+        # Kinematics for the head
+        chain, fk_solver, ik_solver = generate_solver(
+            self.urdf,
+            "torso",
+            "head_tip",
+            L=np.array([1e-6, 1e-6, 1e-6, 1.0, 1.0, 1.0]),
+        )  # L weight matrix to considere only the orientation
+
+        # We automatically loads the kinematics corresponding to the config
+        if chain.getNrOfJoints():
+            self.logger.info(f"Found kinematics chain for head!")
+
+            for j in self.get_chain_joints_name(chain):
+                self.logger.info(f"\t{j}")
+
+            # Create forward kinematics service
+            srv = self.create_service(
+                srv_type=GetForwardKinematics,
+                srv_name="/head/forward_kinematics",
+                callback=partial(self.forward_kinematics_srv, name="head"),
+            )
+            self.fk_srv["head"] = srv
+            self.logger.info(f'Adding service "{srv.srv_name}"...')
+
+            # Create inverse kinematics service
+            srv = self.create_service(
+                srv_type=GetInverseKinematics,
+                srv_name="/head/inverse_kinematics",
+                callback=partial(self.inverse_kinematics_srv, name="head"),
+            )
+            self.ik_srv["head"] = srv
+            self.logger.info(f'Adding service "{srv.srv_name}"...')
+
+            # Create cartesian control subscription
+            head_forward_position_pub = self.create_publisher(
+                msg_type=Float64MultiArray,
+                topic="/neck_forward_position_controller/commands",  # need
+                qos_profile=5,
+            )
+
+            sub = self.create_subscription(
+                msg_type=PoseStamped,
+                topic="/head/target_pose",
+                qos_profile=high_freq_qos_profile,
+                callback=partial(
+                    self.on_target_pose,
+                    name="head",
+                    # head straight
+                    q0=[0, 0, 0],
+                    forward_publisher=head_forward_position_pub,
+                ),
+            )
+            self.target_sub["head"] = sub
+            self.logger.info(f'Adding subscription on "{sub.topic}"...')
+
+            sub = self.create_subscription(
+                msg_type=PoseStamped,
+                topic="/head/averaged_target_pose",
+                qos_profile=5,
+                callback=partial(
+                    self.on_averaged_target_pose,
+                    name="head",
+                    # head straight
+                    q0=[0, 0, 0],
+                    forward_publisher=head_forward_position_pub,
+                ),
+            )
+            self.averaged_target_sub["head"] = sub
+            self.averaged_pose["head"] = PoseAverager(window_length=1)
+
+            self.max_joint_vel["head"] = np.array([0.1, 0.1, 0.1])
+            self.logger.info(f'Adding subscription on "{sub.topic}"...')
+
+            self.chain["head"] = chain
+            self.fk_solver["head"] = fk_solver
+            self.ik_solver["head"] = ik_solver
+
+        self.logger.info(f"Kinematics node ready!")
+        self.trigger_configure()
+
+    def on_configure(self, state: State) -> TransitionCallbackReturn:
+        # Dummy state to minimize impact on current behavior
+        self.logger.info(
+            "Configuring state has been called, going into inactive to release event trigger"
+        )
+        return TransitionCallbackReturn.SUCCESS
+
+    def forward_kinematics_srv(
+        self,
+        request: GetForwardKinematics.Request,
+        response: GetForwardKinematics.Response,
+        name,
+    ) -> GetForwardKinematics.Response:
+        try:
+            joint_position = self.check_position(
+                request.joint_position, self.chain[name]
+            )
+        except KeyError:
+            response.success = False
+            return response
+
+        error, sol = forward_kinematics(
+            self.fk_solver[name],
+            joint_position,
+            self.chain[name].getNrOfJoints(),
+        )
+
+        x, y, z = sol[:3, 3]
+        q = Rotation.from_matrix(sol[:3, :3]).as_quat()
+
+        # TODO: use error?
+        response.success = True
+
+        response.pose.position.x = x
+        response.pose.position.y = y
+        response.pose.position.z = z
+
+        response.pose.orientation.x = q[0]
+        response.pose.orientation.y = q[1]
+        response.pose.orientation.z = q[2]
+        response.pose.orientation.w = q[3]
+
+        return response
+
+    def symbolic_inverse_kinematics(self, name, M):
+        d_theta_max = 0.03
+        # TEMP INVERTING THE ARMS
+        if name.startswith("l"):
+            name = "r_arm"
+        elif name.startswith("r"):
+            name = "l_arm"
+
+        if name.startswith("r"):
+            prefered_theta = self.prefered_theta
+        else:
+            prefered_theta = np.pi - self.prefered_theta
+
+        if self.previous_theta[name] is None:
+            self.previous_theta[name] = prefered_theta
+
+        if self.previous_sol[name] is None:
+            self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        self.logger.warning(
+            f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
+        )
+
+        goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
+
+        # TEMP !!!
+        goal_position[1] = -goal_position[1]
+        goal_orientation[0] = -goal_orientation[0]
+        goal_orientation[2] = -goal_orientation[2]
+
+        self.logger.warning(f"{name} goal_position: {goal_position}")
+
+        goal_pose = np.array([goal_position, goal_orientation])
+
+        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
+            name
+        ].is_reachable(goal_pose)
+        if is_reachable:
+            is_reachable, theta, state = get_best_continuous_theta(
+                self.previous_theta[name],
+                interval,
+                theta_to_joints_func,
+                d_theta_max,
+                prefered_theta,
+                self.symbolic_ik_solver[name].arm,
+            )
+            self.previous_theta[name] = theta
+            self.ik_joints, elbow_position = theta_to_joints_func(theta)
+            self.logger.warning(
+                f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
+            )
+
+        else:
+            self.logger.warning(f"{name} Pose not reachable but doing our best")
+            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
+                name
+            ].is_reachable_no_limits(goal_pose)
+            if is_reachable:
+                is_reachable, theta = tend_to_prefered_theta(
+                    self.previous_theta[name],
+                    interval,
+                    theta_to_joints_func,
+                    d_theta_max,
+                    goal_theta=prefered_theta,
+                )
+                self.previous_theta[name] = theta
+                self.ik_joints, elbow_position = theta_to_joints_func(theta)
+            else:
+                self.logger.error(
+                    f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
+                )
+                raise RuntimeError(
+                    "Pose not reachable in symbolic IK. We crash on purpose while we are on the debug sessions. This piece of code should disapiear after that."
+                )
+        self.logger.warning(f"{name} new_theta: {theta}")
+        # if name.startswith("l"):
+        #     self.logger.warning(
+        #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
+        #     )
+
+        self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
+
+        sol = self.ik_joints
+
+        # self.logger.warning(f"{name} jump in joint space")
+        # self.previous_sol[name] = [
+        #     (self.previous_sol[name][i] * 99 + sol[i]) / 100 for i in range(7)
+        # ]
+        # return self.previous_sol[name], is_reachable
+        return sol, is_reachable
+
+    def inverse_kinematics_srv(
+        self,
+        request: GetInverseKinematics.Request,
+        response: GetInverseKinematics.Response,
+        name,
+    ) -> GetInverseKinematics.Response:
+        M = ros_pose_to_matrix(request.pose)
+        q0 = request.q0.position
+        if "arm" in name:
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+        else:
+            error, sol = inverse_kinematics(
+                self.ik_solver[name],
+                q0=q0,
+                target_pose=M,
+                nb_joints=self.chain[name].getNrOfJoints(),
+            )
+
+        # TODO: use error
+        response.success = True  # is_reachable
+        response.joint_position.name = self.get_chain_joints_name(self.chain[name])
+        response.joint_position.position = sol
+
+        # self.logger.info(f"{sol} (KDL solution)")
+
+        return response
+
+    def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
+        M = ros_pose_to_matrix(msg.pose)
+        if "arm" in name:
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+        else:
+            error, sol = inverse_kinematics(
+                self.ik_solver[name],
+                q0=q0,
+                target_pose=M,
+                nb_joints=self.chain[name].getNrOfJoints(),
+            )
+
+        # TODO: check error
+
+        msg = Float64MultiArray()
+        msg.data = sol
+
+        forward_publisher.publish(msg)
+
+    def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
+        self.averaged_pose[name].append(msg.pose)
+        avg_pose = self.averaged_pose[name].mean()
+
+        M = ros_pose_to_matrix(avg_pose)
+        if "arm" in name:
+            sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+        else:
+            error, sol = inverse_kinematics(
+                self.ik_solver[name],
+                q0=q0,
+                target_pose=M,
+                nb_joints=self.chain[name].getNrOfJoints(),
+            )
+
+        # TODO: check error
+        current_position = np.array(self.get_current_position(self.chain[name]))
+
+        vel = np.array(sol) - current_position
+        # vel = np.clip(vel, -self.max_joint_vel[name], self.max_joint_vel[name])
+
+        smoothed_sol = current_position + vel
+
+        msg = Float64MultiArray()
+        msg.data = smoothed_sol.tolist()
+
+        forward_publisher.publish(msg)
+
+    def get_current_position(self, chain) -> List[float]:
+        joints = self.get_chain_joints_name(chain)
+        return [self._current_pos[j] for j in joints]
+
+    def wait_for_joint_state(self):
+        while not self.joint_state_ready.is_set():
+            self.logger.info("Waiting for /joint_states...")
+            rclpy.spin_once(self)
+
+    def on_joint_state(self, msg: JointState):
+        for j, pos in zip(msg.name, msg.position):
+            self._current_pos[j] = pos
+
+        self.joint_state_ready.set()
+
+    def retrieve_urdf(self, timeout_sec: float = 15):
+        self.logger.info('Retrieving URDF from "/robot_description"...')
+
+        qos_profile = QoSProfile(depth=1)
+        qos_profile.durability = QoSDurabilityPolicy.TRANSIENT_LOCAL
+
+        self.urdf = None
+
+        def urdf_received(msg: String):
+            self.urdf = msg.data
+
+        self.create_subscription(
+            msg_type=String,
+            topic="/robot_description",
+            qos_profile=qos_profile,
+            callback=urdf_received,
+        )
+        rclpy.spin_once(self, timeout_sec=timeout_sec)
+
+        if self.urdf is None:
+            self.logger.error("Could not retrieve the URDF!")
+            raise EnvironmentError("Could not retrieve the URDF!")
+
+        self.logger.info("Done!")
+
+        return self.urdf
+
+    def check_position(self, js: JointState, chain) -> List[float]:
+        pos = dict(zip(js.name, js.position))
+        try:
+            joints = [pos[j] for j in self.get_chain_joints_name(chain)]
+            return joints
+        except KeyError:
+            self.logger.warning(
+                f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
+            )
+            raise
+
+    def get_chain_joints_name(self, chain):
+        joints = []
+
+        for i in range(chain.getNrOfSegments()):
+            joint = chain.getSegment(i).getJoint()
+            if joint.getType() == joint.RotAxis:
+                joints.append(joint.getName())
+
+        return joints
+
+
+def main():
+    rclpy.init()
+    node = PollenKdlKinematics()
+    rclpy.spin(node)
+
+
+if __name__ == "__main__":
+    main()
