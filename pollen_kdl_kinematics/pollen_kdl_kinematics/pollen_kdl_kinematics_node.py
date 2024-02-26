@@ -363,6 +363,8 @@ class PollenKdlKinematics(LifecycleNode):
         #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
         #     )
 
+        self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
+
         sol = self.ik_joints
         return sol, is_reachable
 
