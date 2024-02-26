@@ -75,6 +75,7 @@ class PollenKdlKinematics(LifecycleNode):
         # A balanced position between elbow down and elbow at 90°
         self.prefered_theta = 5 * np.pi / 4  # np.pi / 4
         self.previous_theta = {}
+        self.previous_sol = {}
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
@@ -97,7 +98,11 @@ class PollenKdlKinematics(LifecycleNode):
             )
 
             self.previous_theta[arm] = None
-
+            self.previous_sol[arm] = None
+            
+        
+            
+            
             # We automatically loads the kinematics corresponding to the config
             if chain.getNrOfJoints():
                 self.logger.info(f'Found kinematics chain for "{arm}"!')
@@ -298,6 +303,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def symbolic_inverse_kinematics(self, name, M):
         d_theta_max = 0.03
+        
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -306,6 +312,10 @@ class PollenKdlKinematics(LifecycleNode):
 
         if self.previous_theta[name] is None:
             self.previous_theta[name] = prefered_theta
+            
+        if self.previous_sol[name] is None:
+            self.previous_sol[name] = [0.,0.,0.,0.,0.,0.,0.]
+            
 
         self.logger.warning(
             f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
@@ -366,6 +376,12 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
 
         sol = self.ik_joints
+   
+        # self.logger.warning(f"{name} jump in joint space")
+        sol = [(self.previous_sol[name][i]*9 + sol[i])/10 for i in range(7)]
+        
+        
+        
         return sol, is_reachable
 
     def inverse_kinematics_srv(
