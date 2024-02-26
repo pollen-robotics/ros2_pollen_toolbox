@@ -297,7 +297,7 @@ class PollenKdlKinematics(LifecycleNode):
         return response
 
     def symbolic_inverse_kinematics(self, name, M):
-        d_theta_max = 0.01
+        d_theta_max = 0.03
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -358,10 +358,10 @@ class PollenKdlKinematics(LifecycleNode):
                     "Pose not reachable in symbolic IK. We crash on purpose while we are on the debug sessions. This piece of code should disapiear after that."
                 )
         self.logger.warning(f"{name} new_theta: {theta}")
-        if name.startswith("l"):
-            self.logger.warning(
-                f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
-            )
+        # if name.startswith("l"):
+        #     self.logger.warning(
+        #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
+        #     )
 
         sol = self.ik_joints
         return sol, is_reachable
