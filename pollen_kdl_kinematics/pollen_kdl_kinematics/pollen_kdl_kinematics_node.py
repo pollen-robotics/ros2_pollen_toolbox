@@ -299,7 +299,7 @@ class PollenKdlKinematics(LifecycleNode):
         return response
 
     def symbolic_inverse_kinematics(self, name, M):
-        d_theta_max = 0.03
+        d_theta_max = 0.01
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
