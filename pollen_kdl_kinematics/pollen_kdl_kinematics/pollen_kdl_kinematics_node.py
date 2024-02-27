@@ -368,16 +368,18 @@ class PollenKdlKinematics(LifecycleNode):
         #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
         #     )
 
+        self.ik_joints = self.allow_multiturn(self.ik_joints, self.previous_sol[name])
+        self.previous_sol[name] = self.ik_joints
         self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
 
-        sol = self.ik_joints
+        # TODO reactivate a smoothing technique
 
         # self.logger.warning(f"{name} jump in joint space")
         # self.previous_sol[name] = [
         #     (self.previous_sol[name][i] * 99 + sol[i]) / 100 for i in range(7)
         # ]
         # return self.previous_sol[name], is_reachable
-        return sol, is_reachable
+        return self.ik_joints, is_reachable
 
     def inverse_kinematics_srv(
         self,
@@ -515,6 +517,21 @@ class PollenKdlKinematics(LifecycleNode):
                 joints.append(joint.getName())
 
         return joints
+
+    def allow_multiturn(self, new_joints, prev_joints):
+        """This function will always guarantee that the joint takes the shortest path to the new position.
+        The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
+        """
+
+        for i in range(len(new_joints)):
+            diff = angle_diff(new_joints[i], prev_joints[i])
+            if abs(abs(new_joints[i]) + abs(prev_joints[i]) - 2 * np.pi) < 0.01:
+                self.logger.warning(
+                    f"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\nMultiturn detected: new_joints: {new_joints}, prev_joints: {prev_joints}"
+                )
+                self.logger.warning(f"diff: {diff}")
+            new_joints[i] = prev_joints[i] + diff
+        return new_joints
 
 
 def main():
