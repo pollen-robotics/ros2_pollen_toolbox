@@ -368,17 +368,18 @@ class PollenKdlKinematics(LifecycleNode):
         #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
         #     )
 
+        # self.logger.warning(f"{name} jump in joint space")
+
         self.ik_joints = self.allow_multiturn(self.ik_joints, self.previous_sol[name])
+        self.previous_sol[name] = [
+            (self.previous_sol[name][i] * 99 + self.ik_joints[i]) / 100
+            for i in range(7)
+        ]
         self.previous_sol[name] = self.ik_joints
         self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
 
         # TODO reactivate a smoothing technique
 
-        # self.logger.warning(f"{name} jump in joint space")
-        # self.previous_sol[name] = [
-        #     (self.previous_sol[name][i] * 99 + sol[i]) / 100 for i in range(7)
-        # ]
-        # return self.previous_sol[name], is_reachable
         return self.ik_joints, is_reachable
 
     def inverse_kinematics_srv(
