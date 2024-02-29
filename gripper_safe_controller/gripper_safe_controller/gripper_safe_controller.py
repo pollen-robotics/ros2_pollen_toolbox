@@ -150,7 +150,7 @@ class GripperSafeController(Node):
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
         for name, position in zip(msg.name, msg.position):
-            if "gripper" in name:
+            if "finger" in name:
                 self.grippers[name] = {
                     "present_position": position,
                     "user_requested_goal_position": position,
@@ -170,6 +170,11 @@ class GripperSafeController(Node):
             #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
             
 
+            # if name.startswith("r"):
+            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
+            
+        self.logger.warning("\n\n")
+        self.logger.warning(str(self.gripper_states))
         self.publish_goals()
         self.publish_pids()
 
@@ -218,7 +223,7 @@ class GripperSafeController(Node):
             controller_config = config["controller_manager"]["ros__parameters"]
             forward_controllers = []
             for k, v in controller_config.items():
-                if "gripper" not in k:
+                if "finger" not in k:
                     continue
                 try:
                     if (
