@@ -74,7 +74,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         # Symbolic IK inits.
         # A balanced position between elbow down and elbow at 90°
-        self.prefered_theta = 5 * np.pi / 4  # np.pi / 4
+        self.prefered_theta = 8 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
         self.previous_theta = {}
         self.previous_sol = {}
 
