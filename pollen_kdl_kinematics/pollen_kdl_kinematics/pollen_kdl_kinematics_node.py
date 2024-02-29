@@ -1,4 +1,5 @@
 from functools import partial
+from operator import ne
 from threading import Event
 from typing import List
 
@@ -399,6 +400,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: use error
         response.success = True  # is_reachable
@@ -420,6 +422,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
 
@@ -442,6 +445,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
         current_position = np.array(self.get_current_position(self.chain[name]))
@@ -532,6 +536,17 @@ class PollenKdlKinematics(LifecycleNode):
                 )
                 self.logger.warning(f"diff: {diff}")
             new_joints[i] = prev_joints[i] + diff
+        return new_joints
+
+    def limit_orbita3d_joints(self, joints):
+        """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into the pi/4 cone."""
+        rotation = Rotation.from_euler(
+            "xyz", [joints[0], joints[1], joints[2]], degrees=False
+        )
+        new_joints = rotation.as_euler("ZYZ", degrees=False)
+        new_joints[1] = min(np.pi / 4, max(-np.pi / 4, new_joints[1]))
+        rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
+        new_joints = rotation.as_euler("xyz", degrees=False)
         return new_joints
 
 
