@@ -313,13 +313,13 @@ class PollenKdlKinematics(LifecycleNode):
         if self.previous_sol[name] is None:
             self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-        self.logger.warning(
-            f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
-        )
+        # self.logger.warning(
+        #     f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
+        # )
 
         goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
 
-        self.logger.warning(f"{name} goal_position: {goal_position}")
+        # self.logger.warning(f"{name} goal_position: {goal_position}")
 
         goal_pose = np.array([goal_position, goal_orientation])
 
@@ -337,12 +337,12 @@ class PollenKdlKinematics(LifecycleNode):
             )
             self.previous_theta[name] = theta
             self.ik_joints, elbow_position = theta_to_joints_func(theta)
-            self.logger.warning(
-                f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            )
+            # self.logger.warning(
+            #     f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
+            # )
 
         else:
-            self.logger.warning(f"{name} Pose not reachable but doing our best")
+            # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                 name
             ].is_reachable_no_limits(goal_pose)
@@ -363,7 +363,7 @@ class PollenKdlKinematics(LifecycleNode):
                 raise RuntimeError(
                     "Pose not reachable in symbolic IK. We crash on purpose while we are on the debug sessions. This piece of code should disapiear after that."
                 )
-        self.logger.warning(f"{name} new_theta: {theta}")
+        # self.logger.warning(f"{name} new_theta: {theta}")
         # if name.startswith("l"):
         #     self.logger.warning(
         #         f"Symetrised previous_theta diff: {(self.previous_theta['r_arm'] - (np.pi - self.previous_theta['l_arm']))%(2*np.pi)}"
@@ -377,7 +377,7 @@ class PollenKdlKinematics(LifecycleNode):
             for i in range(7)
         ]
         self.previous_sol[name] = self.ik_joints
-        self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
+        # self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
 
         # TODO reactivate a smoothing technique
 
@@ -400,7 +400,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            # sol = self.limit_orbita3d_joints(sol)
 
         # TODO: use error
         response.success = True  # is_reachable
@@ -422,7 +422,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            # sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
 
@@ -445,7 +445,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            # sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
         current_position = np.array(self.get_current_position(self.chain[name]))
@@ -540,6 +540,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def limit_orbita3d_joints(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into the pi/4 cone."""
+        self.logger.info(f"HEAD initial: {joints}")
         rotation = Rotation.from_euler(
             "xyz", [joints[0], joints[1], joints[2]], degrees=False
         )
@@ -547,6 +548,8 @@ class PollenKdlKinematics(LifecycleNode):
         new_joints[1] = min(np.pi / 4, max(-np.pi / 4, new_joints[1]))
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
         new_joints = rotation.as_euler("xyz", degrees=False)
+        self.logger.info(f"HEAD final: {new_joints}")
+        
         return new_joints
 
 
