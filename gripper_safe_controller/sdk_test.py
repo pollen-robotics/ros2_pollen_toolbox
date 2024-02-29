@@ -20,14 +20,14 @@ def gripper_test():
         print(f"l={reachy.l_arm.gripper}")
         
         reachy.r_arm.gripper.close()
-        #reachy.l_arm.gripper.close()
+        reachy.l_arm.gripper.close()
 
         time.sleep(2.0)
-        #reachy.r_arm.gripper.open()
-        #reachy.l_arm.gripper.open()
-        reachy.r_arm.gripper.set_opening(75)
+        reachy.r_arm.gripper.open()
+        reachy.l_arm.gripper.open()
+        # reachy.r_arm.gripper.set_opening(75)
         #reachy.l_arm.gripper.set_opening(75)
-        print(f"r={reachy.r_arm.gripper}")
+        # print(f"r={reachy.r_arm.gripper}")
         #print(f"l={reachy.l_arm.gripper}")
         time.sleep(2.0)
 if __name__ == "__main__":

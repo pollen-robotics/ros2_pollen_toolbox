@@ -173,8 +173,6 @@ class GripperSafeController(Node):
             # if name.startswith("r"):
             #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
             
-        self.logger.warning("\n\n")
-        self.logger.warning(str(self.gripper_states))
         self.publish_goals()
         self.publish_pids()
 
@@ -223,7 +221,7 @@ class GripperSafeController(Node):
             controller_config = config["controller_manager"]["ros__parameters"]
             forward_controllers = []
             for k, v in controller_config.items():
-                if "finger" not in k:
+                if "gripper" not in k:
                     continue
                 try:
                     if (

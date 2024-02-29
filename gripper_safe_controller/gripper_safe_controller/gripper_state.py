@@ -6,7 +6,7 @@ import numpy as np
 UPDATE_FREQ = 100  # Hz
 DT = 1 / UPDATE_FREQ
 
-MX28_TO_MX106_RATIO = 0.0*2.5/8.4 # With the MX-106, just staying where we are is enough...
+MX28_TO_MX106_RATIO = 2.5/8.4 # With the MX-106, just staying where we are is enough...
 
 MAX_TORQUE = 0.5*MX28_TO_MX106_RATIO
 P_SAFE_CLOSE = 3.0
@@ -15,7 +15,7 @@ P_DIRECT_CONTROL = 5.0
 HISTORY_LENGTH = 10
 SKIP_EARLY_DTS = 15
 MIN_MOVING_DIST = 0.02#0.004
-MAX_ERROR = np.deg2rad(3.0)#np.deg2rad(10.0)
+MAX_ERROR = np.deg2rad(20.0)#np.deg2rad(10.0)
 MOVING_SPEED = np.deg2rad(110)
 INC_PER_DT = DT * MOVING_SPEED
 
