@@ -336,7 +336,9 @@ class PollenKdlKinematics(LifecycleNode):
                 self.symbolic_ik_solver[name].arm,
             )
             self.previous_theta[name] = theta
-            self.ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
+            self.ik_joints, elbow_position = theta_to_joints_func(
+                theta, previous_joints=self.previous_sol[name]
+            )
             # self.logger.warning(
             #     f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
             # )
@@ -355,7 +357,9 @@ class PollenKdlKinematics(LifecycleNode):
                     goal_theta=prefered_theta,
                 )
                 self.previous_theta[name] = theta
-                self.ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
+                self.ik_joints, elbow_position = theta_to_joints_func(
+                    theta, previous_joints=self.previous_sol[name]
+                )
             else:
                 self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
@@ -400,7 +404,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            # sol = self.limit_orbita3d_joints(sol)
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: use error
         response.success = True  # is_reachable
@@ -422,7 +426,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            # sol = self.limit_orbita3d_joints(sol)
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
 
@@ -445,7 +449,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            # sol = self.limit_orbita3d_joints(sol)
+            sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
         current_position = np.array(self.get_current_position(self.chain[name]))
@@ -512,7 +516,6 @@ class PollenKdlKinematics(LifecycleNode):
                 f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
             )
             raise
-        
 
     def get_chain_joints_name(self, chain):
         joints = []
@@ -531,12 +534,14 @@ class PollenKdlKinematics(LifecycleNode):
         for i in range(len(new_joints)):
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
-            
+
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
-        indexes_that_can_multiturn = [0,2,6]
+        indexes_that_can_multiturn = [0, 2, 6]
         for index in indexes_that_can_multiturn:
             if abs(new_joints[index]) > np.pi:
-                self.logger.warning(f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+                self.logger.warning(
+                    f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+                )
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
@@ -550,7 +555,7 @@ class PollenKdlKinematics(LifecycleNode):
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
         new_joints = rotation.as_euler("xyz", degrees=False)
         self.logger.info(f"HEAD final: {new_joints}")
-        
+
         return new_joints
 
 
