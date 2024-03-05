@@ -398,6 +398,7 @@ class PollenKdlKinematics(LifecycleNode):
         q0 = request.q0.position
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+            sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -420,6 +421,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+            sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -443,6 +445,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(avg_pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
+            sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -546,7 +549,7 @@ class PollenKdlKinematics(LifecycleNode):
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
-        """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into the pi/4 cone."""
+        """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into Orbita's cone."""
         self.logger.info(f"HEAD initial: {joints}")
         rotation = Rotation.from_euler(
             "xyz", [joints[0], joints[1], joints[2]], degrees=False
@@ -560,6 +563,16 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger.info(f"HEAD final: {new_joints}")
 
         return new_joints
+
+    def limit_orbita3d_joints_wrist(self, joints):
+        """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D using the wrist conventions. i.e. casting into Orbita's cone."""
+        wrist_joints = joints[4:7]
+
+        wrist_joints = self.limit_orbita3d_joints(wrist_joints)
+
+        joints[4:7] = wrist_joints
+
+        return joints
 
 
 def main():
