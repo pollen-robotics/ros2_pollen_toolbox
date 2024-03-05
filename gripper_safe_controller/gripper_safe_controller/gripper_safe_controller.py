@@ -14,11 +14,20 @@ from pollen_msgs.msg import Gripper
 
 from .gripper_state import DT, GripperState
 
+import pypot.dynamixel
+
+# TEMP to test on desk
+ports = pypot.dynamixel.get_available_ports()
+dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
+MAX_TORQUE = 70
+dxl_io.set_torque_limit({11: MAX_TORQUE})
+dxl_io.set_max_torque({11: MAX_TORQUE})
+
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)
-R_CLOSE_POSITION = np.deg2rad(-10)
+R_CLOSE_POSITION = np.deg2rad(0)
 L_OPEN_POSITION = np.deg2rad(130)
-L_CLOSE_POSITION = np.deg2rad(-10)
+L_CLOSE_POSITION = np.deg2rad(0)
 
 
 class GripperSafeController(Node):
@@ -65,7 +74,7 @@ class GripperSafeController(Node):
         self.gripper_states = {
             name: GripperState(
                 name,
-                is_direct=False,#name.startswith("l"),
+                is_direct=False,  # name.startswith("l"),
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
                 logger=self.logger,
@@ -168,20 +177,27 @@ class GripperSafeController(Node):
             )
             # if name.startswith("r"):
             #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
-            
 
             # if name.startswith("r"):
             #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
-            
+
         self.publish_goals()
         self.publish_pids()
 
     def publish_goals(self):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
-
+        global dxl_io
         data = [0.0] * len(self.gripper_forward_order)
         for name, state in self.gripper_states.items():
             data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
+            self.logger.info(
+                f"Sending {state.safe_computed_goal_position} to {name} ({self.gripper_forward_order[name]})"
+            )
+            if name.startswith("r"):
+                self.logger.info(
+                    f"Sending {state.safe_computed_goal_position} to {name}"
+                )
+                dxl_io.set_goal_position({11: state.safe_computed_goal_position})
 
         msg = Float64MultiArray()
         msg.data = data
