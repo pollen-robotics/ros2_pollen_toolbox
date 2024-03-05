@@ -72,6 +72,7 @@ class PollenKdlKinematics(LifecycleNode):
             # Other QoS settings can be adjusted as needed
         )
 
+        self.orbita3D_max_angle = np.pi / 5  # np.pi / 4 doesn't work
         # Symbolic IK inits.
         # A balanced position between elbow down and elbow at 90°
         self.prefered_theta = 8 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
@@ -551,7 +552,9 @@ class PollenKdlKinematics(LifecycleNode):
             "xyz", [joints[0], joints[1], joints[2]], degrees=False
         )
         new_joints = rotation.as_euler("ZYZ", degrees=False)
-        new_joints[1] = min(np.pi / 4, max(-np.pi / 4, new_joints[1]))
+        new_joints[1] = min(
+            self.orbita3D_max_angle, max(-self.orbita3D_max_angle, new_joints[1])
+        )
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
         new_joints = rotation.as_euler("xyz", degrees=False)
         self.logger.info(f"HEAD final: {new_joints}")
