@@ -16,13 +16,6 @@ from .gripper_state import DT, GripperState
 
 import pypot.dynamixel
 
-# TEMP to test on desk
-ports = pypot.dynamixel.get_available_ports()
-dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
-MAX_TORQUE = 70
-dxl_io.set_torque_limit({11: MAX_TORQUE})
-dxl_io.set_max_torque({11: MAX_TORQUE})
-
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)
 R_CLOSE_POSITION = np.deg2rad(0)
@@ -46,6 +39,14 @@ class GripperSafeController(Node):
         """
         super().__init__("grippers_controller")
         self.logger = self.get_logger()
+
+        # TEMP to test on desk
+        ports = pypot.dynamixel.get_available_ports()
+        self.dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
+        MAX_TORQUE = 50
+        self.id = 11
+        self.dxl_io.set_torque_limit({self.id: MAX_TORQUE})
+        self.dxl_io.set_max_torque({self.id: MAX_TORQUE})
 
         # Topic subscriptions
         self.grippers_sub = self.create_subscription(
@@ -78,6 +79,7 @@ class GripperSafeController(Node):
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
                 logger=self.logger,
+                dxl_io=self.dxl_io,
             )
             for name, value in self.grippers.items()
         }
@@ -154,7 +156,8 @@ class GripperSafeController(Node):
             if name not in self.grippers:
                 continue
 
-            self.grippers[name]["present_position"] = position
+            # TEMP to test on desk
+            # self.grippers[name]["present_position"] = position
 
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
@@ -186,18 +189,19 @@ class GripperSafeController(Node):
 
     def publish_goals(self):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
-        global dxl_io
         data = [0.0] * len(self.gripper_forward_order)
+
         for name, state in self.gripper_states.items():
-            data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
-            self.logger.info(
-                f"Sending {state.safe_computed_goal_position} to {name} ({self.gripper_forward_order[name]})"
+            # Temp to test on desk
+            self.grippers[name]["present_position"] = np.deg2rad(
+                self.dxl_io.get_present_position([self.id])[0]
             )
+            data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
+            # TEMP to test on desk
             if name.startswith("r"):
-                self.logger.info(
-                    f"Sending {state.safe_computed_goal_position} to {name}"
-                )
-                dxl_io.set_goal_position({11: state.safe_computed_goal_position})
+                val = np.rad2deg(state.safe_computed_goal_position)
+                # self.logger.info(f"Sending {val} to {name}")
+                self.dxl_io.set_goal_position({self.id: val})
 
         msg = Float64MultiArray()
         msg.data = data
