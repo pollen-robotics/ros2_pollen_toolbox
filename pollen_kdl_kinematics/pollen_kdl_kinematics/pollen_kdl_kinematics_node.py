@@ -374,12 +374,7 @@ class PollenKdlKinematics(LifecycleNode):
                     f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
                 )
                 self.previous_theta[name] = theta
-<<<<<<< HEAD
-                self.ik_joints, elbow_position = theta_to_joints_func(theta)
-                
-=======
                 self.ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
->>>>>>> main
             else:
                 self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
