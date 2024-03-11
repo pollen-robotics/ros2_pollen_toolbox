@@ -350,7 +350,7 @@ class PollenKdlKinematics(LifecycleNode):
                 f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
             )
             self.previous_theta[name] = theta
-            self.ik_joints, elbow_position = theta_to_joints_func(theta)
+            self.ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             # self.logger.warning(
             #     f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
             # )
@@ -374,8 +374,12 @@ class PollenKdlKinematics(LifecycleNode):
                     f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
                 )
                 self.previous_theta[name] = theta
+<<<<<<< HEAD
                 self.ik_joints, elbow_position = theta_to_joints_func(theta)
                 
+=======
+                self.ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
+>>>>>>> main
             else:
                 self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
@@ -532,6 +536,7 @@ class PollenKdlKinematics(LifecycleNode):
                 f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
             )
             raise
+        
 
     def get_chain_joints_name(self, chain):
         joints = []
@@ -547,15 +552,15 @@ class PollenKdlKinematics(LifecycleNode):
         """This function will always guarantee that the joint takes the shortest path to the new position.
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
-
         for i in range(len(new_joints)):
             diff = angle_diff(new_joints[i], prev_joints[i])
-            if abs(abs(new_joints[i]) + abs(prev_joints[i]) - 2 * np.pi) < 0.01:
-                self.logger.warning(
-                    f"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\nMultiturn detected: new_joints: {new_joints}, prev_joints: {prev_joints}"
-                )
-                self.logger.warning(f"diff: {diff}")
             new_joints[i] = prev_joints[i] + diff
+            
+        # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
+        indexes_that_can_multiturn = [0,2,6]
+        for index in indexes_that_can_multiturn:
+            if abs(new_joints[index]) > np.pi:
+                self.logger.warning(f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
