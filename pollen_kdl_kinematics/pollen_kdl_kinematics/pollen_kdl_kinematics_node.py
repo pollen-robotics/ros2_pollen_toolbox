@@ -14,6 +14,7 @@ from reachy2_symbolic_ik.utils import (
     angle_diff,
     get_best_continuous_theta,
     tend_to_prefered_theta,
+    limit_theta_to_interval,
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -74,7 +75,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         # Symbolic IK inits.
         # A balanced position between elbow down and elbow at 90°
-        self.prefered_theta = 8 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
+        self.prefered_theta = -4 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
         self.previous_theta = {}
         self.previous_sol = {}
 
@@ -301,11 +302,18 @@ class PollenKdlKinematics(LifecycleNode):
 
     def symbolic_inverse_kinematics(self, name, M):
         d_theta_max = 0.01
+        interval_limit = [-4*np.pi/5, 0]
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
         else:
-            prefered_theta = np.pi - self.prefered_theta
+            prefered_theta = -np.pi - self.prefered_theta
+
+        if name.startswith("l"):
+            interval_limit = [-np.pi - interval_limit[1], -np.pi - interval_limit[0]]
+
+
+
 
         if self.previous_theta[name] is None:
             self.previous_theta[name] = prefered_theta
@@ -335,11 +343,18 @@ class PollenKdlKinematics(LifecycleNode):
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
             )
+            self.logger.warning(
+                f"name: {name}, theta: {theta}")
+            theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
+            self.logger.warning(
+                f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
+            )
             self.previous_theta[name] = theta
             self.ik_joints, elbow_position = theta_to_joints_func(theta)
             # self.logger.warning(
             #     f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
             # )
+
 
         else:
             # self.logger.warning(f"{name} Pose not reachable but doing our best")
@@ -354,8 +369,13 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max,
                     goal_theta=prefered_theta,
                 )
+                theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
+                self.logger.warning(
+                    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
+                )
                 self.previous_theta[name] = theta
                 self.ik_joints, elbow_position = theta_to_joints_func(theta)
+                
             else:
                 self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
