@@ -21,7 +21,9 @@ HISTORY_LENGTH = 5  # 10
 SKIP_EARLY_DTS = 15
 MIN_MOVING_DIST = 0.04  # 0.02  # 0.004
 MAX_ERROR = np.deg2rad(5.0)  # np.deg2rad(10.0)
-MOVING_SPEED = np.deg2rad(110)
+MOVING_SPEED = np.deg2rad(
+    378
+)  # 378 deg/s is the no load speed at 12V for the MX-64 # np.deg2rad(110)
 INC_PER_DT = DT * MOVING_SPEED
 
 MX28_A_GAIN = 3.0 * MX64_TO_MX106_RATIO
@@ -217,6 +219,9 @@ class GripperState:
         )
 
     def compute_close_smart_goal_position(self) -> float:
+        """Outputs a goal position that is always close to the previous goal position.
+        So if the user requests a goal position that is far from the current position, this method will create an interpolation based on the max speed allowed.
+        """
         last_req_goal_pos = self.user_requested_goal_position[-1]
         goal_offset = INC_PER_DT * np.sign(
             last_req_goal_pos - self.present_position[-1]
