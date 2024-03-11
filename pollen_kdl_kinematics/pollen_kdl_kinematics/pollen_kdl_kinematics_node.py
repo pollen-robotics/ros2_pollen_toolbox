@@ -377,10 +377,7 @@ class PollenKdlKinematics(LifecycleNode):
         # self.logger.warning(f"{name} jump in joint space")
 
         self.ik_joints = self.allow_multiturn(self.ik_joints, self.previous_sol[name])
-        self.previous_sol[name] = [
-            (self.previous_sol[name][i] * 99 + self.ik_joints[i]) / 100
-            for i in range(7)
-        ]
+
         self.previous_sol[name] = self.ik_joints
         # self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
 
