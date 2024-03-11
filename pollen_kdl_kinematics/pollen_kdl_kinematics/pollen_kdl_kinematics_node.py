@@ -546,6 +546,8 @@ class PollenKdlKinematics(LifecycleNode):
                 self.logger.warning(
                     f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
                 )
+                # TEMP forbidding multiturn
+                new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
