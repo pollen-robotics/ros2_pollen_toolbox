@@ -344,12 +344,12 @@ class PollenKdlKinematics(LifecycleNode):
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
             )
-            self.logger.warning(
-                f"name: {name}, theta: {theta}")
+            #self.logger.warning(
+            #    f"name: {name}, theta: {theta}")
             theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-            self.logger.warning(
-                f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
-            )
+            #self.logger.warning(
+            #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
+            #)
             self.previous_theta[name] = theta
             self.ik_joints, elbow_position = theta_to_joints_func(
                 theta, previous_joints=self.previous_sol[name]
@@ -360,7 +360,7 @@ class PollenKdlKinematics(LifecycleNode):
 
 
         else:
-            # self.logger.warning(f"{name} Pose not reachable but doing our best")
+            self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                 name
             ].is_reachable_no_limits(goal_pose)
@@ -373,9 +373,9 @@ class PollenKdlKinematics(LifecycleNode):
                     goal_theta=prefered_theta,
                 )
                 theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-                self.logger.warning(
-                    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
-                )
+                #self.logger.warning(
+                #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
+                #)
                 self.previous_theta[name] = theta
                 self.ik_joints, elbow_position = theta_to_joints_func(
                     theta, previous_joints=self.previous_sol[name]
@@ -563,7 +563,7 @@ class PollenKdlKinematics(LifecycleNode):
                     f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
                 )
                 # TEMP forbidding multiturn
-                new_joints[index] = np.sign(new_joints[index]) * np.pi
+                #new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
