@@ -73,7 +73,7 @@ class PollenKdlKinematics(LifecycleNode):
             # Other QoS settings can be adjusted as needed
         )
 
-        self.orbita3D_max_angle = np.pi / 5  # np.pi / 4 doesn't work
+        self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
         # Symbolic IK inits.
         # A balanced position between elbow down and elbow at 90°
         self.prefered_theta = -4 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
@@ -354,13 +354,13 @@ class PollenKdlKinematics(LifecycleNode):
             self.ik_joints, elbow_position = theta_to_joints_func(
                 theta, previous_joints=self.previous_sol[name]
             )
-            # self.logger.warning(
-            #     f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            # )
+            #self.logger.warning(
+            #    f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
+            #)
 
 
         else:
-            self.logger.warning(f"{name} Pose not reachable but doing our best")
+            #self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                 name
             ].is_reachable_no_limits(goal_pose)
@@ -568,7 +568,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def limit_orbita3d_joints(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into Orbita's cone."""
-        self.logger.info(f"HEAD initial: {joints}")
+        #self.logger.info(f"HEAD initial: {joints}")
         rotation = Rotation.from_euler(
             "xyz", [joints[0], joints[1], joints[2]], degrees=False
         )
@@ -578,7 +578,7 @@ class PollenKdlKinematics(LifecycleNode):
         )
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
         new_joints = rotation.as_euler("xyz", degrees=False)
-        self.logger.info(f"HEAD final: {new_joints}")
+        #self.logger.info(f"HEAD final: {new_joints}")
 
         return new_joints
 
