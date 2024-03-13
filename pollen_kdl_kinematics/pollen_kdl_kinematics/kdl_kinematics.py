@@ -20,7 +20,9 @@ def generate_solver(urdf_str: str, root: str, tip: str, L: np.ndarray = np.array
 
     ik_solver = kdl.ChainIkSolverPos_LMA(chain, eps=1e-5, maxiter=500, eps_joints=1e-15, L=L)
 
-    return chain, fk_solver, ik_solver
+    jac_solver = kdl.ChainJntToJacSolver(chain)
+
+    return chain, fk_solver, ik_solver, jac_solver
 
 
 def forward_kinematics(fk_solver, joints: np.ndarray, nb_joints: int) -> Tuple[float, np.ndarray]:

@@ -2,13 +2,17 @@ import copy
 import time
 from functools import partial
 from threading import Event
+from time import time
 from typing import List
 
 import numpy as np
+import pinocchio as pin
+import PyKDL as kdl
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
+                       ReliabilityPolicy)
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import angle_diff, get_best_continuous_theta, limit_theta_to_interval, tend_to_prefered_theta
 from scipy.spatial.transform import Rotation
@@ -35,6 +39,36 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.urdf = self.retrieve_urdf()
 
+        self.tick=None
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile()
+        with open(tmp.name, 'w') as f:
+            f.write(self.urdf)
+        self.pinrobot = pin.RobotWrapper.BuildFromURDF(tmp.name)
+        tolock = [
+           'l_shoulder_pitch'  ,
+           'l_shoulder_roll' ,
+           'l_elbow_yaw'  ,
+           'l_elbow_pitch' ,
+           'l_wrist_roll'  ,
+           'l_wrist_pitch' ,
+           'l_wrist_yaw'  ,
+           'l_hand_finger' ,
+           'l_hand_finger_mimic'  ,
+           'neck_roll' ,
+           'neck_pitch'  ,
+           'neck_yaw' ,
+        ]
+        # Get the ID of all existing joints
+        self.jointsToLockIDs = []
+        for jn in tolock:
+            if self.pinrobot.model.existJointName(jn):
+                self.jointsToLockIDs.append(self.pinrobot.model.getJointId(jn))
+        self.pinmodel = pin.buildReducedModel(self.pinrobot.model, self.jointsToLockIDs, np.zeros(21))
+        self.logger.info('pinocchio: {}'.format(pin.__file__))
+
+
+
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
         self._current_pos = {}
@@ -47,7 +81,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.joint_state_ready = Event()
         self.wait_for_joint_state()
 
-        self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
+        self.chain, self.fk_solver, self.ik_solver, self.jac_solver = {}, {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
@@ -175,9 +209,10 @@ class PollenKdlKinematics(LifecycleNode):
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
                 self.ik_solver[arm] = ik_solver
+                self.jac_solver[arm] = jac_solver
 
         # Kinematics for the head
-        chain, fk_solver, ik_solver = generate_solver(
+        chain, fk_solver, ik_solver, jac_solver = generate_solver(
             self.urdf,
             "torso",
             "head_tip",
@@ -254,6 +289,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.chain["head"] = chain
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
+            self.jac_solver["head"] = jac_solver
 
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
@@ -466,6 +502,18 @@ class PollenKdlKinematics(LifecycleNode):
         # smoothed_sol = current_position + vel
         # msg = Float64MultiArray()
         # msg.data = smoothed_sol.tolist()
+
+        jkdl = kdl.Jacobian(len(q0))
+        qkdl = kdl.JntArray(len(q0))
+        for i, j in enumerate(qkdl):
+            qkdl[i] = j
+        self.jac_solver[name].JntToJac(qkdl, jkdl)
+
+        Jac =  np.zeros((jkdl.rows(), jkdl.columns()))
+        for i in range(jkdl.rows()):
+            for j in range(jkdl.columns()):
+                Jac[i,j] = jkdl[i,j]
+        self.logger.info('Jac: {}'.format(Jac))
 
         msg = Float64MultiArray()
         msg.data = sol
