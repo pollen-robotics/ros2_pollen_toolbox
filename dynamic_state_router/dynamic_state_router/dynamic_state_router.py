@@ -19,20 +19,20 @@ In more details, it:
 - Specifically handles grippers commands (due to SafeGripperController)
 
 """
+import re
 from collections import defaultdict
 from functools import partial
+from math import e
 from threading import Event, Lock, Thread
 
+import numpy as np
 import rclpy
-from rclpy.node import Node
-
 from control_msgs.msg import DynamicJointState
-from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray
-
 from pollen_msgs.msg import Gripper
 from pollen_msgs.srv import GetDynamicState
-
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
 
 from .forward_controller import ForwardControllersPool
 
@@ -55,6 +55,11 @@ class DynamicStateRouterNode(Node):
             qos_profile=5,
             callback=self.on_dynamic_joint_states,
         )
+        self.continuity_safety_on = False
+        # This safety is mostly here to detect discontinuities in the target position.
+        # That's why we use a large detection speed but a small max speed if a discontinuity is detected.
+        self.max_joint_velocity_threshold = 10.0  # rad/s
+        self.max_joint_velocity = self.max_joint_velocity_threshold / 4  # rad/s
 
         self.joint_command = {}
 
@@ -200,10 +205,73 @@ class DynamicStateRouterNode(Node):
 
         for j in self.joint_state.values():
             if "target_position" in j:
+                target_position = self.continuity_on_target_position(j)
+
                 msg.name.append(j["name"])
-                msg.position.append(j["target_position"])
+                msg.position.append(target_position)
+                # if j["name"] == "l_elbow_pitch":
+                #     self.logger.info(
+                #         f"Publishing {j['name']} {j['target_position']}, present = {j['position']}"
+                #     )
 
         self.joint_commands_pub.publish(msg)
+
+    def continuity_on_target_position(self, j):
+        target_position = j["target_position"]
+
+        if not self.continuity_safety_on:
+            return target_position
+
+        if not "position" in j:
+            self.logger.error(
+                f"Joint {j['name']} has no position value, cannot apply continuity safety on target position"
+            )
+            return target_position
+        present_position = j["position"]
+        reduced_target, reduced = self.limit_target_position(
+            present_position, target_position
+        )
+        # Not duplicating the warning since the exact same calculation is done in handle_regular_commands
+        # if reduced:
+        # self.logger.warning(
+        #     f"Joint {j['name']} is moving too fast. present_pos: {present_position:.3f} rad, target_pos: {target_position:.3f} rad => requested speed of {(target_position - present_position)*self.freq:.3f}. reduced_target_pos: {reduced_target:.3f}, equivalent speed of {(reduced_target - present_position)*self.freq:.3f} (rad/s)"
+        # )
+        return reduced_target
+
+    def continuity_on_regular_command(self, joint_name, target_position):
+        if not self.continuity_safety_on:
+            return target_position
+
+        if not "position" in self.joint_state[joint_name]:
+            self.logger.error(
+                f"Joint {joint_name} has no position value, cannot apply continuity safety on regular command"
+            )
+            return target_position
+        present_position = self.joint_state[joint_name]["position"]
+        reduced_target, reduced = self.limit_target_position(
+            present_position, target_position
+        )
+        if reduced:
+            self.logger.warning(
+                f"Joint {joint_name} is moving too fast. present_pos: {present_position:.3f} rad, target_pos: {target_position:.3f} rad => requested speed of {(target_position - present_position)*self.freq:.3f}. reduced_target_pos: {reduced_target:.3f}, equivalent speed of {(reduced_target - present_position)*self.freq:.3f} (rad/s)"
+            )
+        return reduced_target
+
+    def limit_target_position(self, present_position, target_position):
+        """If the target position is too far from the present position, reduce it to avoid too fast movements.
+        The equivalent speed must not exceed self.max_joint_velocity_threshold.
+        If it does, the target position is reduced to obtain a speed of self.max_joint_velocity_threshold.
+        """
+        if (
+            abs(target_position - present_position)
+            > self.max_joint_velocity_threshold / self.freq
+        ):
+            reduced_target = present_position + (
+                self.max_joint_velocity / self.freq
+            ) * np.sign(target_position - present_position)
+            return reduced_target, True
+        else:
+            return target_position, False
 
     def handle_commands(self, commands):
         gripper_commands = defaultdict(dict)
@@ -262,6 +330,7 @@ class DynamicStateRouterNode(Node):
         to_pub = defaultdict(dict)
         for joint, iv in commands.items():
             for interface, value in iv.items():
+                # For a position command it would e.g joint='r_shoulder_roll', interface='position', value=0.1
                 try:
                     fc = self.forward_controllers.get_corresponding_controller(
                         joint, interface
@@ -271,6 +340,8 @@ class DynamicStateRouterNode(Node):
                         f"Unknown interface '{interface}' for joint '{joint}'"
                     )
                     continue
+                if interface == "position":
+                    value = self.continuity_on_regular_command(joint, value)
                 to_pub[fc][joint] = value
 
         for fc, new_cmd in to_pub.items():
