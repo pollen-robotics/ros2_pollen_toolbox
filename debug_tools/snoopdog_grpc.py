@@ -9,6 +9,9 @@ from reachy2_sdk import ReachySDK
 
 reachy = ReachySDK(host="localhost")
 
+# reachy.r_gripper._gripper_stub.TurnOn(reachy.r_gripper.part_id)
+
+# reachy.r_arm._arm_stub.TurnOn(reachy.r_arm.part_id)
 reachy.turn_on()
 
 

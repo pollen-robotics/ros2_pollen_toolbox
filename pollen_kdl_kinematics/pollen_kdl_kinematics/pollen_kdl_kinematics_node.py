@@ -23,6 +23,8 @@ from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
 from .kdl_kinematics import forward_kinematics, generate_solver, inverse_kinematics, ros_pose_to_matrix
 from .pose_averager import PoseAverager
+import osqp
+import scipy.sparse as spa
 
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
@@ -44,6 +46,10 @@ class PollenKdlKinematics(LifecycleNode):
         tmp = tempfile.NamedTemporaryFile()
         with open(tmp.name, 'w') as f:
             f.write(self.urdf)
+
+        def print(msg):
+            self.logger.info(msg)
+        print('tmpfile:{}'.format( tmp.name))
         self.pinrobot = pin.RobotWrapper.BuildFromURDF(tmp.name)
         tolock = [
            'l_shoulder_pitch'  ,
@@ -66,6 +72,9 @@ class PollenKdlKinematics(LifecycleNode):
                 self.jointsToLockIDs.append(self.pinrobot.model.getJointId(jn))
         self.pinmodel = pin.buildReducedModel(self.pinrobot.model, self.jointsToLockIDs, np.zeros(21))
         self.logger.info('pinocchio: {}'.format(pin.__file__))
+
+
+        # self.qp = osqp.OSQP()
 
 
 
@@ -479,6 +488,78 @@ class PollenKdlKinematics(LifecycleNode):
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
             # sol = self.limit_orbita3d_joints_wrist(sol)
+
+            def print(msg):
+                self.logger.info(msg)
+            print('sol: {} {}'.format( type(sol), sol))
+            print('arm: {} joints: {}'.format(name, self.chain[name].getNrOfJoints()))
+
+            #####################################################
+            # TODO experimental QP SOLVER FOR ARMS
+            _, M_current = forward_kinematics(
+                self.fk_solver[name],
+                q0,
+                self.chain[name].getNrOfJoints(),
+            )
+
+            # compute jac
+            jkdl = kdl.Jacobian(len(q0))
+            qkdl = kdl.JntArray(len(q0))
+            for i, j in enumerate(qkdl):
+                qkdl[i] = j
+            self.jac_solver[name].JntToJac(qkdl, jkdl)
+
+            # kdl.Jacobian -> np.array
+            Jac =  np.zeros((jkdl.rows(), jkdl.columns()))
+            for i in range(jkdl.rows()):
+                for j in range(jkdl.columns()):
+                    Jac[i,j] = jkdl[i,j]
+            # self.logger.info('Jac: {}'.format(Jac))
+
+            # setup qp
+            def np_to_kdl(npmat):
+                RR = npmat[:3, :3]
+                pp = npmat[:3, 3]
+                return kdl.Frame(kdl.Rotation(*RR.ravel().tolist()), kdl.Vector(*pp))
+            M_target_kdl = np_to_kdl(M)
+            M_current_kdl = np_to_kdl(M_current)
+
+            w_reg = 1e-5
+            P = spa.csc_matrix(2*Jac.T.dot(Jac)) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
+            log = np.fromiter(kdl.diff(M_current_kdl, M_target_kdl), float)
+            q = -2*Jac.T*log #- w_reg*2*np.ones(self.chain[name].getNrOfJoints())*(-q0)
+            eye = np.eye(self.chain[name].getNrOfJoints())
+            # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
+            qp_A = spa.csc_matrix(np.vstack([eye]))
+
+            QDMAX = 2
+            # QDMAX = .1
+            qd_max = QDMAX*np.ones(self.chain[name].getNrOfJoints())
+            qd_min = -QDMAX*np.ones(self.chain[name].getNrOfJoints())
+            q_max = np.pi*np.ones(self.chain[name].getNrOfJoints())
+            q_min = -np.pi*np.ones(self.chain[name].getNrOfJoints())
+            # q_max = np.inf*np.ones(self.chain[name].getNrOfJoints())
+            # q_min = -np.inf*np.ones(self.chain[name].getNrOfJoints())
+
+            T = 1/100 # [Hz]
+            # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
+            # qd_max = np.hstack([qd_max, (q_max-q0)/T])
+            # qd_min = np.hstack([qd_min, (q_min-q0)/T])
+
+            qp_l, qp_u = qd_min, qd_max
+
+
+            self.qp = osqp.OSQP()
+            self.qp.setup(P=P, q=q,
+                          A=qp_A, l=qp_l, u=qp_u, verbose=False)
+            results = self.qp.solve()
+            # results.x, results.info.status
+            print('status: {}'.format(results.info.status))
+            print('result diff: {}'.format(results.x-sol))
+            print('     sol: {}'.format(sol))
+            print('result x: {}'.format(results.x))
+            sol = q0+results.x*T
+
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -503,17 +584,6 @@ class PollenKdlKinematics(LifecycleNode):
         # msg = Float64MultiArray()
         # msg.data = smoothed_sol.tolist()
 
-        jkdl = kdl.Jacobian(len(q0))
-        qkdl = kdl.JntArray(len(q0))
-        for i, j in enumerate(qkdl):
-            qkdl[i] = j
-        self.jac_solver[name].JntToJac(qkdl, jkdl)
-
-        Jac =  np.zeros((jkdl.rows(), jkdl.columns()))
-        for i in range(jkdl.rows()):
-            for j in range(jkdl.columns()):
-                Jac[i,j] = jkdl[i,j]
-        self.logger.info('Jac: {}'.format(Jac))
 
         msg = Float64MultiArray()
         msg.data = sol
