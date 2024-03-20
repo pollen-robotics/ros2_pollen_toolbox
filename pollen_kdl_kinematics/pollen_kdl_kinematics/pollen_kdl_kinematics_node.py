@@ -27,6 +27,7 @@ from .kdl_kinematics import (
     ros_pose_to_matrix,
 )
 from .pose_averager import PoseAverager
+import copy
 
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
@@ -351,7 +352,7 @@ class PollenKdlKinematics(LifecycleNode):
             #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
             #)
             self.previous_theta[name] = theta
-            self.ik_joints, elbow_position = theta_to_joints_func(
+            ik_joints, elbow_position = theta_to_joints_func(
                 theta, previous_joints=self.previous_sol[name]
             )
             #self.logger.warning(
@@ -377,7 +378,7 @@ class PollenKdlKinematics(LifecycleNode):
                 #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
                 #)
                 self.previous_theta[name] = theta
-                self.ik_joints, elbow_position = theta_to_joints_func(
+                ik_joints, elbow_position = theta_to_joints_func(
                     theta, previous_joints=self.previous_sol[name]
                 )
             else:
@@ -394,15 +395,17 @@ class PollenKdlKinematics(LifecycleNode):
         #     )
 
         # self.logger.warning(f"{name} jump in joint space")
+        self.logger.warning(f"{name} ik={ik_joints}")
+        self.logger.warning(f"name {name} previous_sol: {self.previous_sol[name]}")
+        ik_joints = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
 
-        self.ik_joints = self.allow_multiturn(self.ik_joints, self.previous_sol[name])
-
-        self.previous_sol[name] = self.ik_joints
-        # self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
+        self.previous_sol[name] = copy.deepcopy(ik_joints)
+        # self.previous_sol[name] = ik_joints
+        # self.logger.info(f"{name} ik={ik_joints}, elbow={elbow_position}")
 
         # TODO reactivate a smoothing technique
-
-        return self.ik_joints, is_reachable
+        self.logger.warning(f"{name} ik={ik_joints}")
+        return ik_joints, is_reachable
 
     def inverse_kinematics_srv(
         self,
@@ -547,20 +550,21 @@ class PollenKdlKinematics(LifecycleNode):
 
         return joints
 
-    def allow_multiturn(self, new_joints, prev_joints):
+    def allow_multiturn(self, new_joints, prev_joints, name):
         """This function will always guarantee that the joint takes the shortest path to the new position.
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
         for i in range(len(new_joints)):
+            if i == 6:
+                self.logger.warning(f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}")
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
-
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
         indexes_that_can_multiturn = [0, 2, 6]
         for index in indexes_that_can_multiturn:
             if abs(new_joints[index]) > np.pi:
                 self.logger.warning(
-                    f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+                    f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
                 )
                 # TEMP forbidding multiturn
                 #new_joints[index] = np.sign(new_joints[index]) * np.pi
