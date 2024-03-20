@@ -55,7 +55,7 @@ class DynamicStateRouterNode(Node):
             qos_profile=5,
             callback=self.on_dynamic_joint_states,
         )
-        self.continuity_safety_on = False
+        self.continuity_safety_on = True
         # This safety is mostly here to detect discontinuities in the target position.
         # That's why we use a large detection speed but a small max speed if a discontinuity is detected.
         self.max_joint_velocity_threshold = 10.0  # rad/s
