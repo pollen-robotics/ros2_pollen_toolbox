@@ -72,6 +72,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.jointsToLockIDs.append(self.pinrobot.model.getJointId(jn))
         self.pinmodel = pin.buildReducedModel(self.pinrobot.model, self.jointsToLockIDs, np.zeros(21))
         self.logger.info('pinocchio: {}'.format(pin.__file__))
+        self.q_reg = None
 
 
         # self.qp = osqp.OSQP()
@@ -496,24 +497,29 @@ class PollenKdlKinematics(LifecycleNode):
 
             #####################################################
             # TODO experimental QP SOLVER FOR ARMS
+            q = np.array(self.get_current_position(self.chain[name]))
             _, M_current = forward_kinematics(
                 self.fk_solver[name],
-                q0,
+                q,
                 self.chain[name].getNrOfJoints(),
             )
 
-            # compute jac
-            jkdl = kdl.Jacobian(len(q0))
-            qkdl = kdl.JntArray(len(q0))
-            for i, j in enumerate(qkdl):
-                qkdl[i] = j
-            self.jac_solver[name].JntToJac(qkdl, jkdl)
+            def jacobian(myotherq):
+                # compute jac
+                jkdl = kdl.Jacobian(len(myotherq))
+                qkdl = kdl.JntArray(len(myotherq))
+                for i, j in enumerate(myotherq):
+                    qkdl[i] = j
+                self.jac_solver[name].JntToJac(qkdl, jkdl)
 
-            # kdl.Jacobian -> np.array
-            Jac =  np.zeros((jkdl.rows(), jkdl.columns()))
-            for i in range(jkdl.rows()):
-                for j in range(jkdl.columns()):
-                    Jac[i,j] = jkdl[i,j]
+                # kdl.Jacobian -> np.array
+                myjac =  np.zeros((jkdl.rows(), jkdl.columns()))
+                for i in range(jkdl.rows()):
+                    for j in range(jkdl.columns()):
+                        myjac[i,j] = jkdl[i,j]
+                return myjac
+
+            Jac = jacobian(q)
             # self.logger.info('Jac: {}'.format(Jac))
 
             # setup qp
@@ -524,16 +530,67 @@ class PollenKdlKinematics(LifecycleNode):
             M_target_kdl = np_to_kdl(M)
             M_current_kdl = np_to_kdl(M_current)
 
+            T = 1/100 # [Hz]
             w_reg = 1e-5
-            P = spa.csc_matrix(2*Jac.T.dot(Jac)) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
+
+            #  Quadratic Problem
+            #  q => current arm joint angles
+            # qd => joint angle velocities
+            #  min   qd.T P qd + g.T qd
+            #   qd
+            #        qd_min <= qd <= qd_max
+            #  (qd_max-q)/T <= qd <= (qd_max-q)/T
             log = np.fromiter(kdl.diff(M_current_kdl, M_target_kdl), float)
-            q = -2*Jac.T*log #- w_reg*2*np.ones(self.chain[name].getNrOfJoints())*(-q0)
+            print('log: {}'.format(log))
+
+            # Jac = Jac[:3, :]
+            # log = (M[:3, 3]-M_current[:3,3])
+            # log = log[:3]
+
+            P = spa.csc_matrix(2*Jac.T@Jac) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
+
+            def manipul_index(myq):
+                J = jacobian(myq)
+                return np.abs(np.linalg.det(J@J.T))
+
+            def grad(my):
+                manip_cur = manipul_index(q)
+
+                grad = []
+                for it in np.arange(7):
+                    vec = np.zeros(7)
+                    vec[it] = 1e-2
+                    qplus = q + vec
+                    grad.append(manipul_index(qplus)-manip_cur)
+                return np.array(grad)
+
+            # if self.q_reg is None:
+            #     self.q_reg = np.zeros_like(q)
+
+            q_reg = np.zeros_like(q)
+            # q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+            q_reg[2] = np.pi
+            g_q0 = -w_reg*2*(q_reg-q)
+            print('manip: {}'.format(manipul_index(q)))
+            print('grad: {}'.format(grad(q)))
+            # g_q0 = w_reg*2*grad(q)*1e5
+            g = -2*Jac.T@log / T + g_q0
+
+            k = np.eye(6)
+            k[:3,:] *= 1000
+            P = spa.csc_matrix(2*Jac.T@k@k@Jac) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
+            g = -2*Jac.T@k@log / T + g_q0
+
+
+
             eye = np.eye(self.chain[name].getNrOfJoints())
             # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
             qp_A = spa.csc_matrix(np.vstack([eye]))
 
-            QDMAX = 2
-            # QDMAX = .1
+            # QDMAX = 200
+            QDMAX = 5
+            # QDMAX = 2
+            # QDMAX = .5
             qd_max = QDMAX*np.ones(self.chain[name].getNrOfJoints())
             qd_min = -QDMAX*np.ones(self.chain[name].getNrOfJoints())
             q_max = np.pi*np.ones(self.chain[name].getNrOfJoints())
@@ -541,24 +598,30 @@ class PollenKdlKinematics(LifecycleNode):
             # q_max = np.inf*np.ones(self.chain[name].getNrOfJoints())
             # q_min = -np.inf*np.ones(self.chain[name].getNrOfJoints())
 
-            T = 1/100 # [Hz]
+            # enables joint angle limits
             # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
-            # qd_max = np.hstack([qd_max, (q_max-q0)/T])
-            # qd_min = np.hstack([qd_min, (q_min-q0)/T])
+            # qd_max = np.hstack([qd_max, (q_max-q)/T])
+            # qd_min = np.hstack([qd_min, (q_min-q)/T])
 
             qp_l, qp_u = qd_min, qd_max
 
 
             self.qp = osqp.OSQP()
-            self.qp.setup(P=P, q=q,
+            self.qp.setup(P=P, q=g,
                           A=qp_A, l=qp_l, u=qp_u, verbose=False)
             results = self.qp.solve()
             # results.x, results.info.status
             print('status: {}'.format(results.info.status))
             print('result diff: {}'.format(results.x-sol))
-            print('     sol: {}'.format(sol))
-            print('result x: {}'.format(results.x))
-            sol = q0+results.x*T
+            print('    sol: {}'.format(sol))
+
+            alpha = 1e-3
+            transsol = q + alpha*np.linalg.pinv(Jac)@(log/T)
+            print('transsol: {}'.format(transsol))
+            qpsol = q + results.x*T
+            print('qpsol x: {}'.format(qpsol))
+            sol = qpsol
+            # sol = transsol
 
         else:
             error, sol = inverse_kinematics(
