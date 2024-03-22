@@ -395,8 +395,10 @@ class PollenKdlKinematics(LifecycleNode):
         #     )
 
         # self.logger.warning(f"{name} jump in joint space")
-        self.logger.warning(f"{name} ik={ik_joints}")
-        self.logger.warning(f"name {name} previous_sol: {self.previous_sol[name]}")
+        # self.logger.warning(f"{name} ik={ik_joints}")
+        # self.logger.warning(f"name {name} previous_sol: {self.previous_sol[name]}")
+
+        ik_joints = self.limit_orbita3d_joints_wrist(ik_joints)
         ik_joints = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
 
         self.previous_sol[name] = copy.deepcopy(ik_joints)
@@ -404,7 +406,7 @@ class PollenKdlKinematics(LifecycleNode):
         # self.logger.info(f"{name} ik={ik_joints}, elbow={elbow_position}")
 
         # TODO reactivate a smoothing technique
-        self.logger.warning(f"{name} ik={ik_joints}")
+        # self.logger.warning(f"{name} ik={ik_joints}")
         return ik_joints, is_reachable
 
     def inverse_kinematics_srv(
@@ -417,7 +419,7 @@ class PollenKdlKinematics(LifecycleNode):
         q0 = request.q0.position
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -440,7 +442,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -464,7 +466,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(avg_pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -555,8 +557,8 @@ class PollenKdlKinematics(LifecycleNode):
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
         for i in range(len(new_joints)):
-            if i == 6:
-                self.logger.warning(f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}")
+            # if i == 6:
+            #     self.logger.warning(f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}")
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
