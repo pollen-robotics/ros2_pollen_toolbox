@@ -7,47 +7,47 @@ import numpy as np
 import sympy as sp
 from scipy import interpolate
 
-# MX28_TO_MX106_RATIO = 2.5 / 8.4
-MX28_TO_MX64_RATIO = 2.5 / 6.0
-
-UPDATE_FREQ = 100  # Hz
-# TODO this value should be read from a controller parameter instead
-DT = 1 / UPDATE_FREQ
-# The maximum torque that the servo should apply if this algorithm works correctly
-MAX_TORQUE = 0.5 * MX28_TO_MX64_RATIO
-
+## Servomotor related parameters
+P_GAIN = 4.0
+# max_torque set in the servo (max value is 100). This is a firmware configuration.
+DYNAMIXEL_MAX_TORQUE = 50
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
 MAX_SAFE_ERROR = np.deg2rad(2.0)
-MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
-# max_torque set in the servo (max value is 100)
-DYNAMIXEL_MAX_TORQUE = 50
-
-HISTORY_LENGTH = 5  # 10
-# After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
-# This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
-SKIP_EARLY_DTS = 4
-MIN_MOVING_DIST = 0.04  # 0.02  # 0.004
 MAX_COLLISION_ERROR = MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
 MAX_SPEED = np.deg2rad(200)
-INC_PER_DT = MAX_SPEED * DT
-# This is the natural tracking error of the grippe during its cruise speed
+
+# This is the natural tracking error of the gripper during its cruise speed
 DYNAMIC_ERROR = 0.099
-
-SERVO_A_GAIN = 3.0 * MX28_TO_MX64_RATIO
-SERVO_B_GAIN = 0.05 * MX28_TO_MX64_RATIO
-
-P_GAIN = 4.0
 # Maximum temperature is fixed at 65°
-
-
 # Deprecated for now. This algorithm used to change the PID values when a collision was detected.
 # P_SAFE_CLOSE = 3.0  # 3.0
 # P_DIRECT_CONTROL = 5.0
+# MX28_TO_MX64_RATIO = 2.5 / 6.0
 
+
+## Control algorithm related parameters
+# Maximum error in rads that will be requested to the servo by this control algorithm.
+# This directly controls the maximum force that will be applied by the gripper. To get the actual force in N, use get_error_to_apply_force
+MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
+HISTORY_LENGTH = 5  # 10
+# After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
+# This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
+SKIP_EARLY_DTS = 4
+# When in collision, this parameter in rads is the minimum distance that the gripper will move before the collision is considered over
+MIN_MOVING_DIST = 0.075
+UPDATE_FREQ = 100  # Hz
+# TODO this value should be read from a controller parameter instead
+DT = 1 / UPDATE_FREQ
+# Maximum mouvement per control cycle in rads
+MAX_INC_PER_DT = MAX_SPEED * DT
+# If the servo is moving faster than this, it will never be considered in collision
+TOO_FAST_TO_COLLIDE = 0.75 * MAX_INC_PER_DT
+
+## Gripper related parameters
 MAX_OPENING_MM = 95.09
 ANGLE_TO_PERCENT_OPENING = [
     (np.deg2rad(130), 95.09 * 100 / MAX_OPENING_MM),
@@ -121,9 +121,6 @@ class GripperState:
         self, new_present_position: float, new_user_requested_goal_position: float
     ):
         self.present_position.append(new_present_position)
-        # self.logger.info(
-        #     f"DELTA_OS = {self.present_position[-1]-self.present_position[-2]}"
-        # )
 
         if self.has_changed_direction(new_user_requested_goal_position):
             self.elapsed_dts_since_change_of_direction = 0
@@ -152,17 +149,17 @@ class GripperState:
 
         self.interpolated_goal_position.append(interpolated_goal_position)
         # Estimation of the tracking error. Here the expected speed is a linear function of the error
-        error = interpolated_goal_position - new_present_position
-        saturated_error = np.clip(error, -SATURATION_ERROR, SATURATION_ERROR)
+        raw_error = interpolated_goal_position - new_present_position
+        saturated_error = np.clip(raw_error, -SATURATION_ERROR, SATURATION_ERROR)
         max_dynamic_error = DYNAMIC_ERROR if self.is_direct else -DYNAMIC_ERROR
-        error = error + saturated_error * max_dynamic_error / SATURATION_ERROR
+        error = raw_error + saturated_error * max_dynamic_error / SATURATION_ERROR
         self.error.append(error)
 
         if self.name.startswith("r"):
-            self.logger.info(
+            self.logger.debug(
                 f"State: {collision_state}, pres_pos: {new_present_position}, interpol={interpolated_goal_position}, final_goal: {new_user_requested_goal_position}, err: {self.error[-1]}"
             )
-
+            # self.logger.info(f"raw_error: {raw_error} better_error: {error}")
         self.in_collision.append(
             collision_state
             in (CollisionState.ENTERING_COLLISION, CollisionState.STILL_COLLIDING)
@@ -189,18 +186,18 @@ class GripperState:
     def entering_collision(self) -> bool:
         if self.elapsed_dts_since_change_of_direction <= SKIP_EARLY_DTS:
             if self.name.startswith("r"):
-                self.logger.info(f"STILL IN ELAPSED")
+                self.logger.debug(f"STILL IN ELAPSED")
             return False
 
         # filtered_error = np.mean(self.error)
         filtered_error = self.error[-1]
         delta_pos = abs(self.present_position[-1] - self.present_position[-2])
         if self.name.startswith("r"):
-            self.logger.info(
-                f"collision_check. name:{self.name}, error:{filtered_error:.3f}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR:.3f}, last_inc:{delta_pos:.3f}, cruise_inc:{INC_PER_DT:.3f}"
+            self.logger.debug(
+                f"collision_check. name:{self.name}, error:{filtered_error:.3f}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR:.3f}, last_inc:{delta_pos:.3f}, cruise_inc:{MAX_INC_PER_DT:.3f}"
             )
-        # if it's moving fest enough, it will never be considered in collision
-        if delta_pos > INC_PER_DT * 0.75:
+        # if it's moving fast enough, it will never be considered in collision
+        if delta_pos > TOO_FAST_TO_COLLIDE:
             return False
         return (
             (
@@ -238,9 +235,9 @@ class GripperState:
                 > MIN_MOVING_DIST
             )
         )
-        self.logger.info(
-            f"user_request_to_release={user_request_to_release}, moving_again={moving_again}"
-        )
+        # self.logger.info(
+        #     f"user_request_to_release={user_request_to_release}, moving_again={moving_again}"
+        # )
         return user_request_to_release or moving_again
 
     def has_changed_direction(self, new_goal_pos: float) -> bool:
@@ -256,7 +253,7 @@ class GripperState:
         So if the user requests a goal position that is far from the current position, this method will create an interpolation based on the max speed allowed.
         """
         last_req_goal_pos = self.user_requested_goal_position[-1]
-        goal_offset = INC_PER_DT * np.sign(
+        goal_offset = MAX_INC_PER_DT * np.sign(
             last_req_goal_pos - self.present_position[-1]
         )
 
@@ -269,20 +266,12 @@ class GripperState:
         )
 
     def compute_fake_error_goal_position(self) -> float:
+        """Simple method that will output a goal position at a fixed distance from the present position."""
+        # Note: while this approach is simple and robust, we can easily improve it by providing a function
+        # that emultes a force control by calling get_error_to_apply_force.
         model_offset = MAX_APPLIED_ERROR
         if not self.is_direct:
             model_offset = -model_offset
-
-        return model_offset + self.present_position[-1]
-
-    def compute_fake_error_goal_position_ld(self) -> float:
-        model_offset = np.deg2rad(SERVO_A_GAIN * MAX_TORQUE + SERVO_B_GAIN / P_GAIN)
-        if not self.is_direct:
-            model_offset = -model_offset
-        if self.name.startswith("r"):
-            self.logger.info(
-                f"model_offset={model_offset}, self.present_position[-1]={self.present_position[-1]}"
-            )
 
         return model_offset + self.present_position[-1]
 
