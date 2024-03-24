@@ -16,9 +16,9 @@ from .gripper_state import DT, GripperState
 
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)
-R_CLOSE_POSITION = np.deg2rad(0)
+R_CLOSE_POSITION = np.deg2rad(-5)
 L_OPEN_POSITION = np.deg2rad(130)
-L_CLOSE_POSITION = np.deg2rad(0)
+L_CLOSE_POSITION = np.deg2rad(-5)
 
 
 class GripperSafeController(Node):
@@ -116,8 +116,10 @@ class GripperSafeController(Node):
             self.publish_pids()
 
             while rclpy.ok():
+                self.t = time.time()
                 self.gripper_state_update()
-                time.sleep(DT)
+                dt = time.time() - self.t
+                time.sleep(max(0, DT - dt))
 
         self.gripper_state_thread = Thread(target=gripper_state_update_thread)
         self.gripper_state_thread.daemon = True

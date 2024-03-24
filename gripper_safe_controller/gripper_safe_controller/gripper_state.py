@@ -1,3 +1,4 @@
+import time
 from collections import deque
 from enum import Enum
 
@@ -18,19 +19,23 @@ MAX_TORQUE = 0.5 * MX28_TO_MX64_RATIO
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
-MAX_TEMPERATURE_ERROR = np.deg2rad(2.0)
+MAX_SAFE_ERROR = np.deg2rad(2.0)
+MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
 # max_torque set in the servo (max value is 100)
 DYNAMIXEL_MAX_TORQUE = 50
 
 HISTORY_LENGTH = 5  # 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
-# This is to avoid false positives during the acceleration phase
-SKIP_EARLY_DTS = 15
+# This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
+SKIP_EARLY_DTS = 4
 MIN_MOVING_DIST = 0.04  # 0.02  # 0.004
-MAX_COLLISION_ERROR = np.deg2rad(5.0)
+MAX_COLLISION_ERROR = MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
-MOVING_SPEED = np.deg2rad(250)
-INC_PER_DT = DT * MOVING_SPEED
+# This was directly measured as the average cruise speed during a closing motion
+MAX_SPEED = np.deg2rad(200)
+INC_PER_DT = MAX_SPEED * DT
+# This is the natural tracking error of the grippe during its cruise speed
+DYNAMIC_ERROR = 0.099
 
 SERVO_A_GAIN = 3.0 * MX28_TO_MX64_RATIO
 SERVO_B_GAIN = 0.05 * MX28_TO_MX64_RATIO
@@ -146,7 +151,12 @@ class GripperState:
             self.safe_computed_goal_position = new_user_requested_goal_position
 
         self.interpolated_goal_position.append(interpolated_goal_position)
-        self.error.append(interpolated_goal_position - new_present_position)
+        # Estimation of the tracking error. Here the expected speed is a linear function of the error
+        error = interpolated_goal_position - new_present_position
+        saturated_error = np.clip(error, -SATURATION_ERROR, SATURATION_ERROR)
+        max_dynamic_error = DYNAMIC_ERROR if self.is_direct else -DYNAMIC_ERROR
+        error = error + saturated_error * max_dynamic_error / SATURATION_ERROR
+        self.error.append(error)
 
         if self.name.startswith("r"):
             self.logger.info(
@@ -182,11 +192,16 @@ class GripperState:
                 self.logger.info(f"STILL IN ELAPSED")
             return False
 
-        filtered_error = np.mean(self.error)
+        # filtered_error = np.mean(self.error)
+        filtered_error = self.error[-1]
+        delta_pos = abs(self.present_position[-1] - self.present_position[-2])
         if self.name.startswith("r"):
             self.logger.info(
-                f"name:{self.name}, filtered_error:{filtered_error}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR}"
+                f"collision_check. name:{self.name}, error:{filtered_error:.3f}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR:.3f}, last_inc:{delta_pos:.3f}, cruise_inc:{INC_PER_DT:.3f}"
             )
+        # if it's moving fest enough, it will never be considered in collision
+        if delta_pos > INC_PER_DT * 0.75:
+            return False
         return (
             (
                 filtered_error > MAX_COLLISION_ERROR
@@ -254,6 +269,13 @@ class GripperState:
         )
 
     def compute_fake_error_goal_position(self) -> float:
+        model_offset = MAX_APPLIED_ERROR
+        if not self.is_direct:
+            model_offset = -model_offset
+
+        return model_offset + self.present_position[-1]
+
+    def compute_fake_error_goal_position_ld(self) -> float:
         model_offset = np.deg2rad(SERVO_A_GAIN * MAX_TORQUE + SERVO_B_GAIN / P_GAIN)
         if not self.is_direct:
             model_offset = -model_offset
