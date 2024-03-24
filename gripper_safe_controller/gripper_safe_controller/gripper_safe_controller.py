@@ -3,18 +3,16 @@ from threading import Event, Thread
 from typing import Dict
 
 import numpy as np
+import pypot.dynamixel
 import rclpy
 import yaml
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from pollen_msgs.msg import Gripper
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
 
-from pollen_msgs.msg import Gripper
-
 from .gripper_state import DT, GripperState
-
-import pypot.dynamixel
 
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)

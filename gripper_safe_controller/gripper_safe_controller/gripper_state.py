@@ -1,33 +1,47 @@
 from collections import deque
 from enum import Enum
 
+import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sp
-
 from scipy import interpolate
 
-UPDATE_FREQ = 100  # Hz
-DT = 1 / UPDATE_FREQ
-
 # MX28_TO_MX106_RATIO = 2.5 / 8.4
-MX64_TO_MX106_RATIO = 2.5 / 6.0
+MX28_TO_MX64_RATIO = 2.5 / 6.0
 
+UPDATE_FREQ = 100  # Hz
+# TODO this value should be read from a controller parameter instead
+DT = 1 / UPDATE_FREQ
+# The maximum torque that the servo should apply if this algorithm works correctly
+MAX_TORQUE = 0.5 * MX28_TO_MX64_RATIO
 
-MAX_TORQUE = 0.5 * MX64_TO_MX106_RATIO
-P_SAFE_CLOSE = 4.0  # 3.0
-P_DIRECT_CONTROL = 5.0
+# With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
+SATURATION_ERROR = np.deg2rad(5.7)
+# This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
+MAX_TEMPERATURE_ERROR = np.deg2rad(2.0)
+# max_torque set in the servo (max value is 100)
+DYNAMIXEL_MAX_TORQUE = 50
 
 HISTORY_LENGTH = 5  # 10
+# After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
+# This is to avoid false positives during the acceleration phase
 SKIP_EARLY_DTS = 15
 MIN_MOVING_DIST = 0.04  # 0.02  # 0.004
-MAX_ERROR = np.deg2rad(5.0)  # np.deg2rad(10.0)
-MOVING_SPEED = np.deg2rad(
-    378
-)  # 378 deg/s is the no load speed at 12V for the MX-64 # np.deg2rad(110)
+MAX_COLLISION_ERROR = np.deg2rad(5.0)
+# 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
+MOVING_SPEED = np.deg2rad(250)
 INC_PER_DT = DT * MOVING_SPEED
 
-MX28_A_GAIN = 3.0 * MX64_TO_MX106_RATIO
-MX28_B_GAIN = 0.05 * MX64_TO_MX106_RATIO
+SERVO_A_GAIN = 3.0 * MX28_TO_MX64_RATIO
+SERVO_B_GAIN = 0.05 * MX28_TO_MX64_RATIO
+
+P_GAIN = 4.0
+# Maximum temperature is fixed at 65°
+
+
+# Deprecated for now. This algorithm used to change the PID values when a collision was detected.
+# P_SAFE_CLOSE = 3.0  # 3.0
+# P_DIRECT_CONTROL = 5.0
 
 MAX_OPENING_MM = 95.09
 ANGLE_TO_PERCENT_OPENING = [
@@ -67,7 +81,7 @@ class GripperState:
         is_direct: bool,
         present_position: float,
         user_requested_goal_position: float,
-        p: float = P_DIRECT_CONTROL,
+        p: float = P_GAIN,
         i: float = 0.0,
         d: float = 0.0,
         logger=None,
@@ -102,6 +116,9 @@ class GripperState:
         self, new_present_position: float, new_user_requested_goal_position: float
     ):
         self.present_position.append(new_present_position)
+        # self.logger.info(
+        #     f"DELTA_OS = {self.present_position[-1]-self.present_position[-2]}"
+        # )
 
         if self.has_changed_direction(new_user_requested_goal_position):
             self.elapsed_dts_since_change_of_direction = 0
@@ -109,17 +126,13 @@ class GripperState:
         self.user_requested_goal_position.append(new_user_requested_goal_position)
 
         collision_state = self.check_collision_state()
-        if self.name.startswith("r"):
-            self.logger.info(
-                f"Collision state: {collision_state}, present_position: {new_present_position}, user_requested_goal_position: {new_user_requested_goal_position}"
-            )
 
         if collision_state == CollisionState.NO_COLLISION:
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
 
         elif collision_state == CollisionState.ENTERING_COLLISION:
-            self.set_pid(p=P_SAFE_CLOSE, i=0.0, d=0.0)
+            # self.set_pid(p=P_SAFE_CLOSE, i=0.0, d=0.0)
             interpolated_goal_position = self.compute_fake_error_goal_position()
             self.safe_computed_goal_position = interpolated_goal_position
 
@@ -128,12 +141,17 @@ class GripperState:
             self.safe_computed_goal_position = interpolated_goal_position
 
         elif collision_state == CollisionState.LEAVING_COLLISION:
-            self.set_pid(p=P_DIRECT_CONTROL, i=0.0, d=0.0)
+            # self.set_pid(p=P_DIRECT_CONTROL, i=0.0, d=0.0)
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
 
         self.interpolated_goal_position.append(interpolated_goal_position)
         self.error.append(interpolated_goal_position - new_present_position)
+
+        if self.name.startswith("r"):
+            self.logger.info(
+                f"State: {collision_state}, pres_pos: {new_present_position}, interpol={interpolated_goal_position}, final_goal: {new_user_requested_goal_position}, err: {self.error[-1]}"
+            )
 
         self.in_collision.append(
             collision_state
@@ -167,16 +185,16 @@ class GripperState:
         filtered_error = np.mean(self.error)
         if self.name.startswith("r"):
             self.logger.info(
-                f"name:{self.name}, filtered_error:{filtered_error}, MAX_ERROR:{MAX_ERROR}"
+                f"name:{self.name}, filtered_error:{filtered_error}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR}"
             )
         return (
             (
-                filtered_error > MAX_ERROR
+                filtered_error > MAX_COLLISION_ERROR
                 and self.user_requested_goal_position[-1] > self.present_position[-1]
             )
             if self.is_direct
             else (
-                filtered_error < -MAX_ERROR
+                filtered_error < -MAX_COLLISION_ERROR
                 and self.user_requested_goal_position[-1] < self.present_position[-1]
             )
         )
@@ -236,7 +254,7 @@ class GripperState:
         )
 
     def compute_fake_error_goal_position(self) -> float:
-        model_offset = np.deg2rad(MX28_A_GAIN * MAX_TORQUE + MX28_B_GAIN / P_SAFE_CLOSE)
+        model_offset = np.deg2rad(SERVO_A_GAIN * MAX_TORQUE + SERVO_B_GAIN / P_GAIN)
         if not self.is_direct:
             model_offset = -model_offset
         if self.name.startswith("r"):
@@ -304,9 +322,25 @@ class GripperState:
         ratio = self.opening_derivative(angle) / linear_approx
         return ratio
 
+    def get_error_to_apply_force(self, goal_position, goal_force):
+        """This method returns the positional error (rads) to be applied so that the gripper applies a given force (N).
+        This relationship is dependant on the position of the gripper hence the goal_position parameter.
+        """
+        # Detail of the measures
+        # https://www.notion.so/pollen-robotics/Enhance-SmartGripper-with-the-final-version-of-Beta-s-Gripper-e7bed050f5ca4ecab42dab45bac563c5?pvs=4#e2790e854d514a469e2db615b6e14eb7
+        # tl dr at angle 34° with a P of 4 and a max_torque (dynamiel parameter) of 50%, the relationship between the error and the force measured at the fingers is: force(N) = 5.51 * error (°).
+        # This is a simple model that ignores friction
+        error = goal_force / 5.51
+        error = np.deg2rad(error)
+        correction_factor = self.get_correction_factor(goal_position)
+        correction_factor_at_34_deg = self.get_correction_factor(np.deg2rad(34))
+        error = error * correction_factor_at_34_deg / correction_factor
+        error = np.clip(error, -SATURATION_ERROR, SATURATION_ERROR)
+        return error
+
     def calculate_fit_and_derivative_of_opening(self):
         """This is a better implementation of the angle_to_opening function, using a polynomial fit to the data.
-        This allows us to calculate the symbolic derivative of the opening with respect to the angle.
+        This allows to calculate the symbolic derivative of the opening with respect to the angle.
         This derivative is a good approximation of the relationship between the torque applied by the motor and the force applied by the fingers
         """
         # Define the angle and opening data
@@ -329,9 +363,6 @@ class GripperState:
 
 
 if __name__ == "__main__":
-    import logging
-
-    logging.basicConfig(level=logging.DEBUG)
     gripper = GripperState("debug", True, 0, 0)
     test_values = [0, 25, 50, 75, 100]
     results = {value: gripper.opening_to_angle(value) for value in test_values}
@@ -345,9 +376,45 @@ if __name__ == "__main__":
         np.deg2rad(130),
     ]
     results = {value: gripper.angle_to_opening(value) for value in test_values}
-    print(f"Testing angle_to_opening: {results}")
+    print(f"\nTesting angle_to_opening: {results}\n")
 
     for angle in range(0, 130, 10):
         print(
-            f"Angle {angle:.2f}: opening: {gripper.opening_fit(np.deg2rad(angle)):.2f}, derivative: {gripper.opening_derivative(np.deg2rad(angle)):.2f}, correction_factor: {gripper.get_correction_factor(np.deg2rad(angle)):.2f}"
+            f"Angle {angle:.0f}°: opening: {gripper.opening_fit(np.deg2rad(angle)):.2f}%, derivative: {gripper.opening_derivative(np.deg2rad(angle)):.2f}, correction_factor: {gripper.get_correction_factor(np.deg2rad(angle)):.2f}"
         )
+
+    print("\nTesting the  get_error_to_apply_force function")
+    forces = [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30]
+    for angle in test_values:
+        for force in forces:
+            error = gripper.get_error_to_apply_force(angle, force)
+            print(
+                f"Angle: {np.rad2deg(angle):.0f}°, Force: {force}N, Error: {np.rad2deg(error):.0f}°"
+            )
+
+    # Torque values from 0N to 40N
+    torques = np.linspace(0, 40, 100)
+
+    # Goal positions
+    goal_positions = [0, np.deg2rad(50), np.deg2rad(120)]
+
+    # Plotting
+    plt.figure(figsize=(12, 8))
+
+    for goal_position in goal_positions:
+        errors = [
+            gripper.get_error_to_apply_force(goal_position, torque)
+            for torque in torques
+        ]
+        plt.plot(
+            torques,
+            np.rad2deg(errors),
+            label=f"Goal Position = {np.rad2deg(goal_position):.2f}°",
+        )
+
+    plt.title("Error to Apply Force vs. Goal Torque")
+    plt.xlabel("Goal Torque (N)")
+    plt.ylabel("Error (degrees)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
