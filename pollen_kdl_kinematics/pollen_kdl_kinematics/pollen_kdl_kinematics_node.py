@@ -1,3 +1,4 @@
+import copy
 from functools import partial
 from operator import ne
 from threading import Event
@@ -13,8 +14,8 @@ from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (
     angle_diff,
     get_best_continuous_theta,
-    tend_to_prefered_theta,
     limit_theta_to_interval,
+    tend_to_prefered_theta,
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -94,7 +95,7 @@ class PollenKdlKinematics(LifecycleNode):
                 gripper_size=0.10,
                 wrist_limit=45,
                 # This is the "correct" stuff for alpha
-                shoulder_orientation_offset=[10, 0, 15],
+                shoulder_orientation_offset=[0, 0, 15],
                 # This is the "wrong" values currently used by the alpha
                 # shoulder_orientation_offset=[0, 0, 15],
                 # shoulder_position=[-0.0479, -0.1913, 0.025],
@@ -303,7 +304,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def symbolic_inverse_kinematics(self, name, M):
         d_theta_max = 0.01
-        interval_limit = [-4*np.pi/5, 0]
+        interval_limit = [-4 * np.pi / 5, 0]
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -312,9 +313,6 @@ class PollenKdlKinematics(LifecycleNode):
 
         if name.startswith("l"):
             interval_limit = [-np.pi - interval_limit[1], -np.pi - interval_limit[0]]
-
-
-
 
         if self.previous_theta[name] is None:
             self.previous_theta[name] = prefered_theta
@@ -344,23 +342,24 @@ class PollenKdlKinematics(LifecycleNode):
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
             )
-            #self.logger.warning(
+            # self.logger.warning(
             #    f"name: {name}, theta: {theta}")
-            theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-            #self.logger.warning(
+            theta = limit_theta_to_interval(
+                theta, self.previous_theta[name], interval_limit
+            )
+            # self.logger.warning(
             #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
-            #)
+            # )
             self.previous_theta[name] = theta
-            self.ik_joints, elbow_position = theta_to_joints_func(
+            ik_joints, elbow_position = theta_to_joints_func(
                 theta, previous_joints=self.previous_sol[name]
             )
-            #self.logger.warning(
+            # self.logger.warning(
             #    f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            #)
-
+            # )
 
         else:
-            #self.logger.warning(f"{name} Pose not reachable but doing our best")
+            # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                 name
             ].is_reachable_no_limits(goal_pose)
@@ -372,12 +371,14 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max,
                     goal_theta=prefered_theta,
                 )
-                theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-                #self.logger.warning(
+                theta = limit_theta_to_interval(
+                    theta, self.previous_theta[name], interval_limit
+                )
+                # self.logger.warning(
                 #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
-                #)
+                # )
                 self.previous_theta[name] = theta
-                self.ik_joints, elbow_position = theta_to_joints_func(
+                ik_joints, elbow_position = theta_to_joints_func(
                     theta, previous_joints=self.previous_sol[name]
                 )
             else:
@@ -394,15 +395,19 @@ class PollenKdlKinematics(LifecycleNode):
         #     )
 
         # self.logger.warning(f"{name} jump in joint space")
+        # self.logger.warning(f"{name} ik={ik_joints}")
+        # self.logger.warning(f"name {name} previous_sol: {self.previous_sol[name]}")
 
-        self.ik_joints = self.allow_multiturn(self.ik_joints, self.previous_sol[name])
+        ik_joints = self.limit_orbita3d_joints_wrist(ik_joints)
+        ik_joints = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
 
-        self.previous_sol[name] = self.ik_joints
-        # self.logger.info(f"{name} ik={self.ik_joints}, elbow={elbow_position}")
+        self.previous_sol[name] = copy.deepcopy(ik_joints)
+        # self.previous_sol[name] = ik_joints
+        # self.logger.info(f"{name} ik={ik_joints}, elbow={elbow_position}")
 
         # TODO reactivate a smoothing technique
-
-        return self.ik_joints, is_reachable
+        # self.logger.warning(f"{name} ik={ik_joints}")
+        return ik_joints, is_reachable
 
     def inverse_kinematics_srv(
         self,
@@ -414,7 +419,7 @@ class PollenKdlKinematics(LifecycleNode):
         q0 = request.q0.position
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -437,7 +442,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -461,7 +466,7 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(avg_pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
-            sol = self.limit_orbita3d_joints_wrist(sol)
+            # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -547,38 +552,39 @@ class PollenKdlKinematics(LifecycleNode):
 
         return joints
 
-    def allow_multiturn(self, new_joints, prev_joints):
+    def allow_multiturn(self, new_joints, prev_joints, name):
         """This function will always guarantee that the joint takes the shortest path to the new position.
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
         for i in range(len(new_joints)):
+            # if i == 6:
+            #     self.logger.warning(f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}")
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
-
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
         indexes_that_can_multiturn = [0, 2, 6]
         for index in indexes_that_can_multiturn:
             if abs(new_joints[index]) > np.pi:
                 self.logger.warning(
-                    f"Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+                    f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
                 )
                 # TEMP forbidding multiturn
-                #new_joints[index] = np.sign(new_joints[index]) * np.pi
+                # new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into Orbita's cone."""
-        #self.logger.info(f"HEAD initial: {joints}")
+        # self.logger.info(f"HEAD initial: {joints}")
         rotation = Rotation.from_euler(
-            "xyz", [joints[0], joints[1], joints[2]], degrees=False
+            "XYZ", [joints[0], joints[1], joints[2]], degrees=False
         )
         new_joints = rotation.as_euler("ZYZ", degrees=False)
         new_joints[1] = min(
             self.orbita3D_max_angle, max(-self.orbita3D_max_angle, new_joints[1])
         )
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
-        new_joints = rotation.as_euler("xyz", degrees=False)
-        #self.logger.info(f"HEAD final: {new_joints}")
+        new_joints = rotation.as_euler("XYZ", degrees=False)
+        # self.logger.info(f"HEAD final: {new_joints}")
 
         return new_joints
 
