@@ -19,6 +19,7 @@ R_CLOSE_POSITION = np.deg2rad(-5)
 L_OPEN_POSITION = np.deg2rad(130)
 L_CLOSE_POSITION = np.deg2rad(-5)
 
+# For testing on desktop
 DESKTOP_TEST = False
 
 
