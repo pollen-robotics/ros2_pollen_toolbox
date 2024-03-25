@@ -19,8 +19,6 @@ R_CLOSE_POSITION = np.deg2rad(-5)
 L_OPEN_POSITION = np.deg2rad(130)
 L_CLOSE_POSITION = np.deg2rad(-5)
 
-DESKTOP_TEST = False
-
 
 class GripperSafeController(Node):
     """Grippers High-level controller node."""
@@ -38,16 +36,6 @@ class GripperSafeController(Node):
         """
         super().__init__("grippers_controller")
         self.logger = self.get_logger()
-
-        if DESKTOP_TEST:
-            import pypot.dynamixel
-
-            ports = pypot.dynamixel.get_available_ports()
-            self.dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
-            MAX_TORQUE = 50
-            self.id = 11
-            self.dxl_io.set_torque_limit({self.id: MAX_TORQUE})
-            self.dxl_io.set_max_torque({self.id: MAX_TORQUE})
 
         # Topic subscriptions
         self.grippers_sub = self.create_subscription(
@@ -158,9 +146,6 @@ class GripperSafeController(Node):
             if name not in self.grippers:
                 continue
 
-            if not DESKTOP_TEST:
-                self.grippers[name]["present_position"] = position
-
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
         for name, position in zip(msg.name, msg.position):
@@ -190,14 +175,6 @@ class GripperSafeController(Node):
 
         for name, state in self.gripper_states.items():
             data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
-            if DESKTOP_TEST:
-                self.grippers[name]["present_position"] = np.deg2rad(
-                    self.dxl_io.get_present_position([self.id])[0]
-                )
-                if name.startswith("r"):
-                    val = np.rad2deg(state.safe_computed_goal_position)
-                    # self.logger.info(f"Sending {val} to {name}")
-                    self.dxl_io.set_goal_position({self.id: val})
 
         msg = Float64MultiArray()
         msg.data = data
