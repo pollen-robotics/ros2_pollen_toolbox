@@ -1,3 +1,4 @@
+import copy
 from functools import partial
 from operator import ne
 from threading import Event
@@ -13,8 +14,8 @@ from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (
     angle_diff,
     get_best_continuous_theta,
-    tend_to_prefered_theta,
     limit_theta_to_interval,
+    tend_to_prefered_theta,
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -27,7 +28,6 @@ from .kdl_kinematics import (
     ros_pose_to_matrix,
 )
 from .pose_averager import PoseAverager
-import copy
 
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
@@ -304,7 +304,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def symbolic_inverse_kinematics(self, name, M):
         d_theta_max = 0.01
-        interval_limit = [-4*np.pi/5, 0]
+        interval_limit = [-4 * np.pi / 5, 0]
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -313,9 +313,6 @@ class PollenKdlKinematics(LifecycleNode):
 
         if name.startswith("l"):
             interval_limit = [-np.pi - interval_limit[1], -np.pi - interval_limit[0]]
-
-
-
 
         if self.previous_theta[name] is None:
             self.previous_theta[name] = prefered_theta
@@ -345,23 +342,24 @@ class PollenKdlKinematics(LifecycleNode):
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
             )
-            #self.logger.warning(
+            # self.logger.warning(
             #    f"name: {name}, theta: {theta}")
-            theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-            #self.logger.warning(
+            theta = limit_theta_to_interval(
+                theta, self.previous_theta[name], interval_limit
+            )
+            # self.logger.warning(
             #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
-            #)
+            # )
             self.previous_theta[name] = theta
             ik_joints, elbow_position = theta_to_joints_func(
                 theta, previous_joints=self.previous_sol[name]
             )
-            #self.logger.warning(
+            # self.logger.warning(
             #    f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            #)
-
+            # )
 
         else:
-            #self.logger.warning(f"{name} Pose not reachable but doing our best")
+            # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
                 name
             ].is_reachable_no_limits(goal_pose)
@@ -373,10 +371,12 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max,
                     goal_theta=prefered_theta,
                 )
-                theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
-                #self.logger.warning(
+                theta = limit_theta_to_interval(
+                    theta, self.previous_theta[name], interval_limit
+                )
+                # self.logger.warning(
                 #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
-                #)
+                # )
                 self.previous_theta[name] = theta
                 ik_joints, elbow_position = theta_to_joints_func(
                     theta, previous_joints=self.previous_sol[name]
@@ -569,22 +569,22 @@ class PollenKdlKinematics(LifecycleNode):
                     f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
                 )
                 # TEMP forbidding multiturn
-                #new_joints[index] = np.sign(new_joints[index]) * np.pi
+                # new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into Orbita's cone."""
-        #self.logger.info(f"HEAD initial: {joints}")
+        # self.logger.info(f"HEAD initial: {joints}")
         rotation = Rotation.from_euler(
-            "xyz", [joints[0], joints[1], joints[2]], degrees=False
+            "XYZ", [joints[0], joints[1], joints[2]], degrees=False
         )
         new_joints = rotation.as_euler("ZYZ", degrees=False)
         new_joints[1] = min(
             self.orbita3D_max_angle, max(-self.orbita3D_max_angle, new_joints[1])
         )
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
-        new_joints = rotation.as_euler("xyz", degrees=False)
-        #self.logger.info(f"HEAD final: {new_joints}")
+        new_joints = rotation.as_euler("XYZ", degrees=False)
+        # self.logger.info(f"HEAD final: {new_joints}")
 
         return new_joints
 
