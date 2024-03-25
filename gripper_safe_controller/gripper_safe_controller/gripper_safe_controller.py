@@ -146,6 +146,8 @@ class GripperSafeController(Node):
             if name not in self.grippers:
                 continue
 
+            self.grippers[name]["present_position"] = position
+
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
         for name, position in zip(msg.name, msg.position):
