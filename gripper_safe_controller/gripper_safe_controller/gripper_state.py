@@ -7,8 +7,6 @@ import numpy as np
 import sympy as sp
 from scipy import interpolate
 
-from .gripper_safe_controller import DESKTOP_TEST
-
 ## Servomotor related parameters
 P_GAIN = 4.0
 # max_torque set in the servo (max value is 100). This is a firmware configuration.
