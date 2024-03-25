@@ -7,6 +7,8 @@ import numpy as np
 import sympy as sp
 from scipy import interpolate
 
+from .gripper_safe_controller import DESKTOP_TEST
+
 ## Servomotor related parameters
 P_GAIN = 4.0
 # max_torque set in the servo (max value is 100). This is a firmware configuration.
@@ -90,7 +92,6 @@ class GripperState:
         i: float = 0.0,
         d: float = 0.0,
         logger=None,
-        dxl_io=None,
     ) -> None:
         self.name = name
         self.is_direct = is_direct
@@ -113,7 +114,6 @@ class GripperState:
         self.elapsed_dts_since_collision = 0
 
         self.pid = p, i, d
-        self.dxl_io = dxl_io
 
         self.calculate_fit_and_derivative_of_opening()
 

@@ -3,7 +3,6 @@ from threading import Event, Thread
 from typing import Dict
 
 import numpy as np
-import pypot.dynamixel
 import rclpy
 import yaml
 from control_msgs.msg import DynamicJointState, InterfaceValue
@@ -19,6 +18,8 @@ R_OPEN_POSITION = np.deg2rad(130)
 R_CLOSE_POSITION = np.deg2rad(-5)
 L_OPEN_POSITION = np.deg2rad(130)
 L_CLOSE_POSITION = np.deg2rad(-5)
+
+DESKTOP_TEST = False
 
 
 class GripperSafeController(Node):
@@ -38,13 +39,15 @@ class GripperSafeController(Node):
         super().__init__("grippers_controller")
         self.logger = self.get_logger()
 
-        # TEMP to test on desk
-        ports = pypot.dynamixel.get_available_ports()
-        self.dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
-        MAX_TORQUE = 50
-        self.id = 11
-        self.dxl_io.set_torque_limit({self.id: MAX_TORQUE})
-        self.dxl_io.set_max_torque({self.id: MAX_TORQUE})
+        if DESKTOP_TEST:
+            import pypot.dynamixel
+
+            ports = pypot.dynamixel.get_available_ports()
+            self.dxl_io = pypot.dynamixel.DxlIO(ports[0], baudrate=1000000)
+            MAX_TORQUE = 50
+            self.id = 11
+            self.dxl_io.set_torque_limit({self.id: MAX_TORQUE})
+            self.dxl_io.set_max_torque({self.id: MAX_TORQUE})
 
         # Topic subscriptions
         self.grippers_sub = self.create_subscription(
@@ -77,7 +80,6 @@ class GripperSafeController(Node):
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
                 logger=self.logger,
-                dxl_io=self.dxl_io,
             )
             for name, value in self.grippers.items()
         }
@@ -156,8 +158,8 @@ class GripperSafeController(Node):
             if name not in self.grippers:
                 continue
 
-            # TEMP to test on desk
-            # self.grippers[name]["present_position"] = position
+            if not DESKTOP_TEST:
+                self.grippers[name]["present_position"] = position
 
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
@@ -178,11 +180,6 @@ class GripperSafeController(Node):
                     "user_requested_goal_position"
                 ],
             )
-            # if name.startswith("r"):
-            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
-
-            # if name.startswith("r"):
-            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
 
         self.publish_goals()
         self.publish_pids()
@@ -192,16 +189,15 @@ class GripperSafeController(Node):
         data = [0.0] * len(self.gripper_forward_order)
 
         for name, state in self.gripper_states.items():
-            # Temp to test on desk
-            self.grippers[name]["present_position"] = np.deg2rad(
-                self.dxl_io.get_present_position([self.id])[0]
-            )
             data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
-            # TEMP to test on desk
-            if name.startswith("r"):
-                val = np.rad2deg(state.safe_computed_goal_position)
-                # self.logger.info(f"Sending {val} to {name}")
-                self.dxl_io.set_goal_position({self.id: val})
+            if DESKTOP_TEST:
+                self.grippers[name]["present_position"] = np.deg2rad(
+                    self.dxl_io.get_present_position([self.id])[0]
+                )
+                if name.startswith("r"):
+                    val = np.rad2deg(state.safe_computed_goal_position)
+                    # self.logger.info(f"Sending {val} to {name}")
+                    self.dxl_io.set_goal_position({self.id: val})
 
         msg = Float64MultiArray()
         msg.data = data
