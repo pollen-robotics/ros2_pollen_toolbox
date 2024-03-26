@@ -309,7 +309,10 @@ class PollenKdlKinematics(LifecycleNode):
     def symbolic_inverse_kinematics(self, name, M):
         t = time.time()
         if abs(t - self.last_call_t[name]) > self.call_timeout:
-            self.previous_theta[name] = None
+            # self.logger.warning(
+            #     f"{name} Timeout reached. Resetting previous_theta and previous_sol"
+            # )
+            self.previous_sol[name] = None
         self.last_call_t[name] = t
         d_theta_max = 0.01
         interval_limit = [-4 * np.pi / 5, 0]
@@ -328,7 +331,13 @@ class PollenKdlKinematics(LifecycleNode):
         if self.previous_sol[name] is None:
             # if the arm move since last call, we need to update the previous_sol
             # self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            # TODO : Get a current position that take the multiturn into consideration
+            # Otherwise, when there is no call for more than 0.5s, the joints will be cast between -pi and pi
+            # -> If you pause a rosbag during a multiturn and restart it, the previous_sol will be wrong by 2pi
             self.previous_sol[name] = np.array(self.get_current_position(self.chain[name]))
+            # self.logger.warning(
+            #     f"{name} previous_sol is None. Setting it to current position : {self.previous_sol[name]}"
+            # )
             # valeur actuelle des joints
 
         # self.logger.warning(
@@ -411,7 +420,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         ik_joints = self.limit_orbita3d_joints_wrist(ik_joints)
         ik_joints = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
-
+        # self.logger.info(f"{name} ik={ik_joints}")
         self.previous_sol[name] = copy.deepcopy(ik_joints)
         # self.previous_sol[name] = ik_joints
         # self.logger.info(f"{name} ik={ik_joints}, elbow={elbow_position}")
