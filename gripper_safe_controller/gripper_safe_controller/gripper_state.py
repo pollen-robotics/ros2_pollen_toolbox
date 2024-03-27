@@ -18,7 +18,7 @@ MAX_SAFE_ERROR = np.deg2rad(2.0)
 MAX_COLLISION_ERROR = MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
-MAX_SPEED = np.deg2rad(200)
+MAX_SPEED = np.deg2rad(160)
 
 # This is the natural tracking error of the gripper during its cruise speed
 DYNAMIC_ERROR = 0.099
@@ -36,7 +36,7 @@ MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
 HISTORY_LENGTH = 5  # 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
 # This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
-SKIP_EARLY_DTS = 4
+SKIP_EARLY_DTS = 6#4
 # When in collision, this parameter in rads is the minimum distance that the gripper will move before the collision is considered over
 MIN_MOVING_DIST = 0.075
 UPDATE_FREQ = 100  # Hz
