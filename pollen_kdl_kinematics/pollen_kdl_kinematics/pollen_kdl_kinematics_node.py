@@ -22,11 +22,9 @@ from std_msgs.msg import Float64MultiArray, String
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
 from .kdl_kinematics import forward_kinematics, generate_solver, inverse_kinematics, ros_pose_to_matrix
+from . import reachy_helper as rh
 from .pose_averager import PoseAverager
-import osqp
-import scipy.sparse as spa
 
-from . import reachy_pinocchio as rp
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
@@ -41,9 +39,6 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger = self.get_logger()
 
         self.urdf = self.retrieve_urdf()
-
-        self.tick=None
-        self.q_reg = None
 
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
@@ -84,9 +79,6 @@ class PollenKdlKinematics(LifecycleNode):
         self.previous_sol = {}
 
         for prefix in ("l", "r"):
-
-            self.pinmodel[prefix + '_arm'] = rp.arm_from_urdfstr(urdfstr=self.urdf, arm=prefix)
-
             arm = f"{prefix}_arm"
 
             chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
@@ -191,8 +183,9 @@ class PollenKdlKinematics(LifecycleNode):
                 self.ik_solver[arm] = ik_solver
                 self.jac_solver[arm] = jac_solver
 
+                self.pinmodel[prefix + '_arm'] = rh.arm_from_urdfstr(urdfstr=self.urdf, arm=prefix)
 
-        self.pinmodel['head'] = rp.head_from_urdfstr(urdfstr=self.urdf)
+
         # Kinematics for the head
         chain, fk_solver, ik_solver, jac_solver = generate_solver(
             self.urdf,
@@ -272,6 +265,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
             self.jac_solver["head"] = jac_solver
+            self.pinmodel['head'] = rh.head_from_urdfstr(urdfstr=self.urdf)
 
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
@@ -464,113 +458,53 @@ class PollenKdlKinematics(LifecycleNode):
 
             def print(msg):
                 self.logger.info(msg)
-            print('sol: {} {}'.format( type(sol), sol))
+            print('sol: {} {}'.format(type(sol), sol))
             print('arm: {} joints: {}'.format(name, self.chain[name].getNrOfJoints()))
 
             #####################################################
             # TODO experimental QP SOLVER FOR ARMS
             q = np.array(self.get_current_position(self.chain[name]))
+
+
+            ####################################################
+            # pinocchio
             model = self.pinmodel[name]
             data = model.createData()
 
             tip = name[0] + '_wrist_yaw'
             frame_id = model.getFrameId(tip)
-            print('tip:{} frame_id:{}'.format(tip, frame_id))
-            oMdes = pin.SE3(M)
-            pin.forwardKinematics(model,data,q)
-            dMi = data.oMf[frame_id].actInv(oMdes)
-            log = pin.log(dMi).vector
-            Jac = pin.computeFrameJacobian(model, data, q, frame_id) # LOCAL
+            # print('tip:{} frame_id:{}'.format(tip, frame_id))
+            Mdes = pin.SE3(M)
+            Mcur = rh.pin_FK(model, data, q, frame_id)
+            log = pin.log(Mcur.actInv(Mdes)).vector
+            # Jac = pin.computeFrameJacobian(model, data, q, frame_id,
+            #                                reference_frame=pin.LOCAL)
+            ####################################################
+            # Jac = pin.computeFrameJacobian(model, data, q, frame_id,
+            #                                reference_frame=pin.LOCAL_WORLD_ALIGNED)
+            ####################################################
+            # kdl
+            Jac = rh.kdl_jacobian(self.jac_solver[name], q)
+            Mcur = rh.kdl_FK(self.fk_solver[name], q)
+            log = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
+            ####################################################
 
             T = 1/100 # [Hz]
-            w_reg = 1e-5
-
-            #  Quadratic Problem
-            #  q => current arm joint angles
-            # qd => joint angle velocities
-            #  min   qd.T P qd + g.T qd
-            #   qd
-            #        qd_min <= qd <= qd_max
-            #  (qd_max-q)/T <= qd <= (qd_max-q)/T
-            print('log: {}'.format(log))
-
-            # Jac = Jac[:3, :]
-            # log = (M[:3, 3]-M_current[:3,3])
-            # log = log[:3]
-
-            P = spa.csc_matrix(2*Jac.T@Jac) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
-
-            def manipul_index(myq):
-                J = pin.computeFrameJacobian(model, data, myq, frame_id) # LOCAL
-                return np.abs(np.linalg.det(J@J.T))
-
-            def grad(my):
-                manip_cur = manipul_index(q)
-
-                grad = []
-                for it in np.arange(7):
-                    vec = np.zeros(7)
-                    vec[it] = 1e-2
-                    qplus = q + vec
-                    grad.append(manipul_index(qplus)-manip_cur)
-                return np.array(grad)
-
-            # if self.q_reg is None:
-            #     self.q_reg = np.zeros_like(q)
 
             q_reg = np.zeros_like(q)
             # q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
             q_reg[2] = np.pi
-            g_q0 = -w_reg*2*(q_reg-q)
-            print('manip: {}'.format(manipul_index(q)))
-            print('grad: {}'.format(grad(q)))
-            # g_q0 = w_reg*2*grad(q)*1e5
-            g = -2*Jac.T@log / T + g_q0
 
-            k = np.eye(6)
-            k[:3,:] *= 1000
-            P = spa.csc_matrix(2*Jac.T@k@k@Jac) # + w_reg*spa.csc_matrix(np.eye(self.chain[name].getNrOfJoints()))
-            g = -2*Jac.T@k@log / T + g_q0
-
-
-
-            eye = np.eye(self.chain[name].getNrOfJoints())
-            # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
-            qp_A = spa.csc_matrix(np.vstack([eye]))
-
-            # QDMAX = 200
-            QDMAX = 5
-            # QDMAX = 2
-            # QDMAX = .5
-            qd_max = QDMAX*np.ones(self.chain[name].getNrOfJoints())
-            qd_min = -QDMAX*np.ones(self.chain[name].getNrOfJoints())
-            q_max = np.pi*np.ones(self.chain[name].getNrOfJoints())
-            q_min = -np.pi*np.ones(self.chain[name].getNrOfJoints())
-            # q_max = np.inf*np.ones(self.chain[name].getNrOfJoints())
-            # q_min = -np.inf*np.ones(self.chain[name].getNrOfJoints())
-
-            # enables joint angle limits
-            # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
-            # qd_max = np.hstack([qd_max, (q_max-q)/T])
-            # qd_min = np.hstack([qd_min, (q_min-q)/T])
-
-            qp_l, qp_u = qd_min, qd_max
-
-
-            self.qp = osqp.OSQP()
-            self.qp.setup(P=P, q=g,
-                          A=qp_A, l=qp_l, u=qp_u, verbose=False)
-            results = self.qp.solve()
-            # results.x, results.info.status
-            print('status: {}'.format(results.info.status))
-            print('result diff: {}'.format(results.x-sol))
             print('    sol: {}'.format(sol))
-
-            alpha = 1e-3
-            transsol = q + alpha*np.linalg.pinv(Jac)@(log/T)
-            print('transsol: {}'.format(transsol))
-            qpsol = q + results.x*T
+            qd = rh.velqp(Jac, log, q, q_reg, T, w_reg=1e-5)
+            qpsol = q + qd*T
             print('qpsol x: {}'.format(qpsol))
+
+            transsol = q + rh.qd_from_Jpen(Jac, v=log/T,
+                                           alpha=1e-3,
+                                           )
+            print('transsol: {}'.format(transsol))
+
             sol = qpsol
             # sol = transsol
 
