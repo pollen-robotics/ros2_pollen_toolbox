@@ -6,19 +6,18 @@ import numpy as np
 import rclpy
 import yaml
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from pollen_msgs.msg import Gripper
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
-
-from pollen_msgs.msg import Gripper
 
 from .gripper_state import DT, GripperState
 
 # Gripper OPEN/CLOSE position (in rads)
 R_OPEN_POSITION = np.deg2rad(130)
-R_CLOSE_POSITION = np.deg2rad(-10)
+R_CLOSE_POSITION = np.deg2rad(-5)
 L_OPEN_POSITION = np.deg2rad(130)
-L_CLOSE_POSITION = np.deg2rad(-10)
+L_CLOSE_POSITION = np.deg2rad(-5)
 
 
 class GripperSafeController(Node):
@@ -65,7 +64,7 @@ class GripperSafeController(Node):
         self.gripper_states = {
             name: GripperState(
                 name,
-                is_direct=False,#name.startswith("l"),
+                is_direct=False,  # name.startswith("l"),
                 present_position=value["present_position"],
                 user_requested_goal_position=value["user_requested_goal_position"],
                 logger=self.logger,
@@ -107,8 +106,10 @@ class GripperSafeController(Node):
             self.publish_pids()
 
             while rclpy.ok():
+                self.t = time.time()
                 self.gripper_state_update()
-                time.sleep(DT)
+                dt = time.time() - self.t
+                time.sleep(max(0, DT - dt))
 
         self.gripper_state_thread = Thread(target=gripper_state_update_thread)
         self.gripper_state_thread.daemon = True
@@ -166,20 +167,14 @@ class GripperSafeController(Node):
                     "user_requested_goal_position"
                 ],
             )
-            # if name.startswith("r"):
-            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
-            
 
-            # if name.startswith("r"):
-            #     self.logger.info(f'{name} : {gripper_state.check_collision_state()}')
-            
         self.publish_goals()
         self.publish_pids()
 
     def publish_goals(self):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
-
         data = [0.0] * len(self.gripper_forward_order)
+
         for name, state in self.gripper_states.items():
             data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
 
