@@ -14,14 +14,14 @@ DYNAMIXEL_MAX_TORQUE = 50
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
-MAX_SAFE_ERROR = np.deg2rad(2.0)
+MAX_SAFE_ERROR = np.deg2rad(1.5)
 MAX_COLLISION_ERROR = MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
-MAX_SPEED = np.deg2rad(160)
+MAX_SPEED = np.deg2rad(195)
 
 # This is the natural tracking error of the gripper during its cruise speed
-DYNAMIC_ERROR = 0.099
+DYNAMIC_ERROR = 0.140#0.099
 # Maximum temperature is fixed at 65°
 # Deprecated for now. This algorithm used to change the PID values when a collision was detected.
 # P_SAFE_CLOSE = 3.0  # 3.0
@@ -33,12 +33,12 @@ DYNAMIC_ERROR = 0.099
 # Maximum error in rads that will be requested to the servo by this control algorithm.
 # This directly controls the maximum force that will be applied by the gripper. To get the actual force in N, use get_error_to_apply_force
 MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
-HISTORY_LENGTH = 5  # 10
+HISTORY_LENGTH = 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
 # This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
 SKIP_EARLY_DTS = 6#4
 # When in collision, this parameter in rads is the minimum distance that the gripper will move before the collision is considered over
-MIN_MOVING_DIST = 0.075
+MIN_MOVING_DIST = 0.04#0.075
 UPDATE_FREQ = 100  # Hz
 # TODO this value should be read from a controller parameter instead
 DT = 1 / UPDATE_FREQ
@@ -157,7 +157,7 @@ class GripperState:
             self.logger.debug(
                 f"State: {collision_state}, pres_pos: {new_present_position}, interpol={interpolated_goal_position}, final_goal: {new_user_requested_goal_position}, err: {self.error[-1]}"
             )
-            # self.logger.info(f"raw_error: {raw_error} better_error: {error}")
+            self.logger.debug(f"raw_error: {raw_error} better_error: {error}")
         self.in_collision.append(
             collision_state
             in (CollisionState.ENTERING_COLLISION, CollisionState.STILL_COLLIDING)
@@ -173,6 +173,11 @@ class GripperState:
         if not self.in_collision[-1] and self.entering_collision():
             self._hidden_collision_state = CollisionState.STILL_COLLIDING
             return CollisionState.ENTERING_COLLISION
+        
+        # if self.in_collision[-1] and not self.entering_collision():
+        #     self._hidden_collision_state = CollisionState.NO_COLLISION
+        #     self.elapsed_dts_since_collision = 0
+        #     return CollisionState.LEAVING_COLLISION
 
         if self.in_collision[-1] and self.leaving_collision():
             self._hidden_collision_state = CollisionState.NO_COLLISION
@@ -192,7 +197,7 @@ class GripperState:
         delta_pos = abs(self.present_position[-1] - self.present_position[-2])
         if self.name.startswith("r"):
             self.logger.debug(
-                f"collision_check. name:{self.name}, error:{filtered_error:.3f}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR:.3f}, last_inc:{delta_pos:.3f}, cruise_inc:{MAX_INC_PER_DT:.3f}"
+                f"collision_check. name:{self.name}, error:{filtered_error:.3f}, MAX_COLLISION_ERROR:{MAX_COLLISION_ERROR:.3f}, last_inc:{delta_pos:.3f}, TOO_FAST_TO_COLLIDE:{TOO_FAST_TO_COLLIDE:.3f}"
             )
         # if it's moving fast enough, it will never be considered in collision
         if delta_pos > TOO_FAST_TO_COLLIDE:
