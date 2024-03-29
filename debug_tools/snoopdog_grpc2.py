@@ -2,10 +2,9 @@ import time
 
 import numpy as np
 from google.protobuf.wrappers_pb2 import FloatValue
+from reachy2_sdk import ReachySDK
 from reachy2_sdk_api.arm_pb2 import ArmCartesianGoal
 from reachy2_sdk_api.kinematics_pb2 import Matrix4x4
-
-from reachy2_sdk import ReachySDK
 
 reachy = ReachySDK(host="localhost")
 
@@ -22,6 +21,9 @@ def goto(x: float, y: float, z: float, partid=1) -> None:
             [0, 0, 1, x],
             [0, 1, 0, y],
             [1, 0, 0, z],
+            # [1, 0, 0, x],
+            # [0, 0, -1, y],
+            # [0, 1, 0, z],
             [0, 0, 0, 1],
         ]
     )

@@ -20,6 +20,10 @@ def qd_from_Jpen(Jac, v, alpha=1e-3):
 def kdldiff_np(Mcur, Mdes):
     Mcur_kdl = Mcur
     Mdes_kdl = Mdes
+    if isinstance(Mcur, pin.SE3):
+        Mcur=pinSE3_to_np(Mcur)
+    if isinstance(Mdes, pin.SE3):
+        Mdes=pinSE3_to_np(Mdes)
 
     if isinstance(Mcur, np.ndarray):
         Mcur_kdl = np_to_kdlFrame(Mcur)
@@ -27,7 +31,13 @@ def kdldiff_np(Mcur, Mdes):
         Mdes_kdl = np_to_kdlFrame(Mdes)
     return np.fromiter(kdl.diff(Mcur_kdl, Mdes_kdl), float)
 
-def velqp(Jac, log, q, q_reg, T, w_reg=1e-5):
+def pinSE3_to_np(M):
+    temp = np.zeros([4,4])
+    temp[:3,:3] = M.rotation
+    temp[:3,3] = M.translation
+    return temp
+
+def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
     #  Quadratic Problem
     #  q => current arm joint angles
     # qd => joint angle velocities
@@ -40,7 +50,7 @@ def velqp(Jac, log, q, q_reg, T, w_reg=1e-5):
     g = -2*Jac.T@log / T + g_q0
 
     k = np.eye(6)
-    # k[:3,:] *= 1000
+    k[:3,:] *= linear_factor
     P = spa.csc_matrix(2*Jac.T@k@k@Jac) # + w_reg*spa.csc_matrix(np.eye(len(q)))
     g = -2*Jac.T@k@log / T + g_q0
 
@@ -74,6 +84,7 @@ def velqp(Jac, log, q, q_reg, T, w_reg=1e-5):
 
 
 def pin_FK(model, data, q, frame_id):
+    pin.computeJointJacobians(model, data, q)
     pin.framesForwardKinematics(model, data, q)
     return data.oMf[frame_id]
 
@@ -92,6 +103,14 @@ def np_to_kdlFrame(npmat):
     pp = npmat[:3, 3]
     return kdl.Frame(kdl.Rotation(*RR.ravel().tolist()), kdl.Vector(*pp))
 
+def kdlFrame_to_np(kdlframe):
+    mat =  np.zeros((4,4))
+    for i in range(3):
+        mat [i,3] = kdlframe.p[i]
+    for i in range(3):
+        for j in range(3):
+            mat[i,j] = kdlframe[i,j]
+    return mat
 
 def kdl_jacobian(jac_solver, myotherq):
     # compute jac
