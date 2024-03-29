@@ -14,14 +14,14 @@ DYNAMIXEL_MAX_TORQUE = 50
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
-MAX_SAFE_ERROR = np.deg2rad(1.5)
+MAX_SAFE_ERROR = np.deg2rad(1.0)
 MAX_COLLISION_ERROR = MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
 MAX_SPEED = np.deg2rad(195)
 
 # This is the natural tracking error of the gripper during its cruise speed
-DYNAMIC_ERROR = 0.140#0.099
+DYNAMIC_ERROR = 0.140  # 0.099
 # Maximum temperature is fixed at 65°
 # Deprecated for now. This algorithm used to change the PID values when a collision was detected.
 # P_SAFE_CLOSE = 3.0  # 3.0
@@ -36,9 +36,9 @@ MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
 HISTORY_LENGTH = 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
 # This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
-SKIP_EARLY_DTS = 6#4
+SKIP_EARLY_DTS = 6  # 4
 # When in collision, this parameter in rads is the minimum distance that the gripper will move before the collision is considered over
-MIN_MOVING_DIST = 0.04#0.075
+MIN_MOVING_DIST = 0.04  # 0.075
 UPDATE_FREQ = 100  # Hz
 # TODO this value should be read from a controller parameter instead
 DT = 1 / UPDATE_FREQ
@@ -173,7 +173,7 @@ class GripperState:
         if not self.in_collision[-1] and self.entering_collision():
             self._hidden_collision_state = CollisionState.STILL_COLLIDING
             return CollisionState.ENTERING_COLLISION
-        
+
         # if self.in_collision[-1] and not self.entering_collision():
         #     self._hidden_collision_state = CollisionState.NO_COLLISION
         #     self.elapsed_dts_since_collision = 0
