@@ -434,10 +434,10 @@ async def all_at_once_demo(action_client, loop):
         p_l[6] = -p_l[6]
 
         my_task1 = loop.create_task(
-            action_client.send_goal("r_arm", r_joint_names, p_r, 2)
+            action_client.send_goal("r_arm", r_joint_names, p_r, 2.0)
         )
         my_task2 = loop.create_task(
-            action_client.send_goal("l_arm", l_joint_names, p_l, 2)
+            action_client.send_goal("l_arm", l_joint_names, p_l, 2.0)
         )
         my_task3 = loop.create_task(
             action_client.send_goal(
@@ -458,11 +458,11 @@ async def run_demo(args, loop):
     # init ros2
     rclpy.init(args=args)
 
-    # # create node
-    # action_client = GotoActionClient()
+    # create node
+    action_client = GotoActionClient()
 
-    # # start spinning
-    # spin_task = loop.create_task(spinning(action_client))
+    # start spinning
+    spin_task = loop.create_task(spinning(action_client))
 
     # # Demo 1: blocking calls
     # await blocking_demo(action_client)
