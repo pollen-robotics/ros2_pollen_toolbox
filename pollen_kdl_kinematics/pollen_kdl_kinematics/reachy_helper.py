@@ -64,15 +64,21 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
     # QDMAX = .5
     qd_max =  QDMAX*np.ones_like(q)
     qd_min = -QDMAX*np.ones_like(q)
-    q_max =   np.pi*np.ones_like(q)
-    q_min =  -np.pi*np.ones_like(q)
-    # q_max =  np.inf*np.ones_like(q)
-    # q_min = -np.inf*np.ones_like(q)
+
+
+    # joint limits
+    q_max =  np.inf*np.ones_like(q)
+    q_min = -np.inf*np.ones_like(q)
+    # q_max =   np.pi*np.ones_like(q)
+    # q_min =  -np.pi*np.ones_like(q)
+    # q_max = np.array([1.57079633, 0., 1.57079633, 0.1, 0.35, 0.35, 1.57])
+    # q_min = np.array([-1.57079633, -1.57079633, -1.57079633, -2.25, -0.35, -0.35, -1.57])
+
 
     # enables joint angle limits
-    # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
-    # qd_max = np.hstack([qd_max, (q_max-q)/T])
-    # qd_min = np.hstack([qd_min, (q_min-q)/T])
+    qp_A = spa.csc_matrix(np.vstack([eye, eye]))
+    qd_max = np.hstack([qd_max, (q_max-q)/T])
+    qd_min = np.hstack([qd_min, (q_min-q)/T])
 
     qp_l, qp_u = qd_min, qd_max
 
