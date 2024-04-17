@@ -15,7 +15,8 @@ DYNAMIXEL_MAX_TORQUE = 50
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
 MAX_SAFE_ERROR = np.deg2rad(1.0)
-MAX_COLLISION_ERROR = MAX_SAFE_ERROR
+# TEMP setting a huge value here effectively disables the not so smart gripper
+MAX_COLLISION_ERROR = np.deg2rad(1000.0)  # MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
 MAX_SPEED = np.deg2rad(195)
