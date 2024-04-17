@@ -88,6 +88,14 @@ class GripperSafeController(Node):
         self.last_torque_limit = {
             name: np.nan for name, state in self.gripper_states.items()
         }
+        
+        self.joint_name = {name: "" for name, state in self.gripper_states.items()}
+        for k in self.joint_name:
+            if k.startswith("l"):
+                self.joint_name[k] = "l_hand_raw_motor_1"
+            if k.startswith("r"):
+                self.joint_name[k] = "r_hand_raw_motor_1"
+                
 
         # Gripper command publisher
         self.gripper_forward_publisher = self.create_publisher(
@@ -194,7 +202,7 @@ class GripperSafeController(Node):
 
         for name, gripper_state in self.gripper_states.items():
             if gripper_state.pid != self.last_grippers_pid[name]:
-                msg.joint_names.append(name)
+                msg.joint_names.append(self.joint_name[name])
 
                 iv = InterfaceValue()
                 iv.interface_names = ["p_gain", "i_gain", "d_gain"]
@@ -213,11 +221,12 @@ class GripperSafeController(Node):
 
         for name, gripper_state in self.gripper_states.items():
             if gripper_state.torque_limit != self.last_torque_limit[name]:
-                msg.joint_names.append(name)
+                msg.joint_names.append(self.joint_name[name])
+                
 
                 iv = InterfaceValue()
-                iv.interface_names = ["torque"]
-                iv.values = list(gripper_state.torque_limit)
+                iv.interface_names = ["torque_limit"]
+                iv.values = [gripper_state.torque_limit]
 
                 msg.interface_values.append(iv)
 

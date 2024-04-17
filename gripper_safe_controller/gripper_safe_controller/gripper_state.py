@@ -14,9 +14,9 @@ DYNAMIXEL_MAX_TORQUE = 50
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
-MAX_SAFE_ERROR = np.deg2rad(1.0)
+MAX_SAFE_ERROR = np.deg2rad(2.0)
 # TEMP setting a huge value here effectively disables the not so smart gripper
-MAX_COLLISION_ERROR = np.deg2rad(1000.0)  # MAX_SAFE_ERROR
+MAX_COLLISION_ERROR = MAX_SAFE_ERROR #np.deg2rad(1000.0)  # MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
 MAX_SPEED = np.deg2rad(195)
@@ -33,7 +33,7 @@ DYNAMIC_ERROR = 0.140  # 0.099
 ## Control algorithm related parameters
 # Maximum error in rads that will be requested to the servo by this control algorithm.
 # This directly controls the maximum force that will be applied by the gripper. To get the actual force in N, use get_error_to_apply_force
-MAX_APPLIED_ERROR = MAX_SAFE_ERROR * 0.5
+MAX_APPLIED_ERROR = SATURATION_ERROR # MAX_SAFE_ERROR * 0.5
 HISTORY_LENGTH = 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
 # This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
@@ -91,7 +91,7 @@ class GripperState:
         i: float = 0.0,
         d: float = 0.0,
         logger=None,
-        torque_limit=20.0,
+        torque_limit=50.0,
     ) -> None:
         self.name = name
         self.is_direct = is_direct
@@ -106,12 +106,14 @@ class GripperState:
             [user_requested_goal_position], HISTORY_LENGTH
         )
         self.error = deque([], HISTORY_LENGTH // 2)
+        self.error.append(0.0)
+        
         self.in_collision = deque([False], HISTORY_LENGTH)
 
         self.safe_computed_goal_position = user_requested_goal_position
 
         self.elapsed_dts_since_change_of_direction = 0
-        self.elapsed_dts_since_collision = 0
+        # self.elapsed_dts_since_collision = 0
 
         self.pid = p, i, d
         self.torque_limit = torque_limit
@@ -123,8 +125,8 @@ class GripperState:
     ):
         self.present_position.append(new_present_position)
 
-        if self.has_changed_direction(new_user_requested_goal_position):
-            self.elapsed_dts_since_change_of_direction = 0
+        # if self.has_changed_direction(new_user_requested_goal_position):
+        #     self.elapsed_dts_since_change_of_direction = 0
 
         self.user_requested_goal_position.append(new_user_requested_goal_position)
 
@@ -136,6 +138,10 @@ class GripperState:
 
         elif collision_state == CollisionState.ENTERING_COLLISION:
             # self.set_pid(p=P_SAFE_CLOSE, i=0.0, d=0.0)
+            if self.name.startswith("r"):
+                self.logger.info(f"Setting torque limit weak !")
+            
+            self.torque_limit = 15
             interpolated_goal_position = self.compute_fake_error_goal_position()
             self.safe_computed_goal_position = interpolated_goal_position
 
@@ -144,6 +150,10 @@ class GripperState:
             self.safe_computed_goal_position = interpolated_goal_position
 
         elif collision_state == CollisionState.LEAVING_COLLISION:
+            if self.name.startswith("r"):
+                self.logger.info(f"Setting torque limit strong !")
+            
+            self.torque_limit = 50        
             # self.set_pid(p=P_DIRECT_CONTROL, i=0.0, d=0.0)
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
@@ -167,7 +177,7 @@ class GripperState:
         )
 
         self.elapsed_dts_since_change_of_direction += 1
-        self.elapsed_dts_since_collision += 1
+        # self.elapsed_dts_since_collision += 1
 
     def check_collision_state(self) -> CollisionState:
         if not hasattr(self, "_hidden_collision_state"):
@@ -184,19 +194,20 @@ class GripperState:
 
         if self.in_collision[-1] and self.leaving_collision():
             self._hidden_collision_state = CollisionState.NO_COLLISION
-            self.elapsed_dts_since_collision = 0
+            # self.elapsed_dts_since_collision = 0
             return CollisionState.LEAVING_COLLISION
 
         return self._hidden_collision_state
 
     def entering_collision(self) -> bool:
-        if self.elapsed_dts_since_change_of_direction <= SKIP_EARLY_DTS:
-            if self.name.startswith("r"):
-                self.logger.debug(f"STILL IN ELAPSED")
-            return False
+        # if self.elapsed_dts_since_change_of_direction <= SKIP_EARLY_DTS:
+        #     if self.name.startswith("r"):
+        #         self.logger.debug(f"STILL IN ELAPSED")
+        #     return False
 
         # filtered_error = np.mean(self.error)
         filtered_error = self.error[-1]
+        # TODO : add a list of dts to measure speeds that are robust to variations in loop contl freq
         delta_pos = abs(self.present_position[-1] - self.present_position[-2])
         if self.name.startswith("r"):
             self.logger.debug(
@@ -232,7 +243,7 @@ class GripperState:
         #   - because the object was removed
         #   - because it was a false detection in the first place
         moving_again = (
-            self.elapsed_dts_since_collision > self.present_position.maxlen
+            True#self.elapsed_dts_since_collision > self.present_position.maxlen
             and (
                 (self.present_position[0] - self.present_position[-1])
                 < -MIN_MOVING_DIST
