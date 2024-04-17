@@ -91,6 +91,7 @@ class GripperState:
         i: float = 0.0,
         d: float = 0.0,
         logger=None,
+        torque_limit=20.0,
     ) -> None:
         self.name = name
         self.is_direct = is_direct
@@ -113,6 +114,7 @@ class GripperState:
         self.elapsed_dts_since_collision = 0
 
         self.pid = p, i, d
+        self.torque_limit = torque_limit
 
         self.calculate_fit_and_derivative_of_opening()
 

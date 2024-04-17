@@ -85,6 +85,10 @@ class GripperSafeController(Node):
             for name, state in self.gripper_states.items()
         }
 
+        self.last_torque_limit = {
+            name: np.nan for name, state in self.gripper_states.items()
+        }
+
         # Gripper command publisher
         self.gripper_forward_publisher = self.create_publisher(
             msg_type=Float64MultiArray,
@@ -104,6 +108,7 @@ class GripperSafeController(Node):
         def gripper_state_update_thread():
             self.publish_goals()
             self.publish_pids()
+            self.publish_torque_limits()
 
             while rclpy.ok():
                 self.t = time.time()
@@ -170,6 +175,7 @@ class GripperSafeController(Node):
 
         self.publish_goals()
         self.publish_pids()
+        self.publish_torque_limits()
 
     def publish_goals(self):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
@@ -197,6 +203,25 @@ class GripperSafeController(Node):
                 msg.interface_values.append(iv)
 
                 self.last_grippers_pid[name] = gripper_state.pid
+
+        if msg.joint_names:
+            self.pid_publisher.publish(msg)
+
+    def publish_torque_limits(self):
+        """Publish new PID requests for grippers."""
+        msg = DynamicJointState()
+
+        for name, gripper_state in self.gripper_states.items():
+            if gripper_state.torque_limit != self.last_torque_limit[name]:
+                msg.joint_names.append(name)
+
+                iv = InterfaceValue()
+                iv.interface_names = ["torque"]
+                iv.values = list(gripper_state.torque_limit)
+
+                msg.interface_values.append(iv)
+
+                self.last_torque_limit[name] = gripper_state.torque_limit
 
         if msg.joint_names:
             self.pid_publisher.publish(msg)
