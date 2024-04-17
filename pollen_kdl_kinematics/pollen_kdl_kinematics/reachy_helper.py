@@ -37,7 +37,7 @@ def pinSE3_to_np(M):
     temp[:3,3] = M.translation
     return temp
 
-def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
+def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
     #  Quadratic Problem
     #  q => current arm joint angles
     # qd => joint angle velocities
@@ -45,8 +45,10 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
     #   qd
     #        qd_min <= qd <= qd_max
     #  (qd_max-q)/T <= qd <= (qd_max-q)/T
+    if q_old is None:
+        q_old = np.zeros_like(q)
 
-    g_q0 = -w_reg*2*(q_reg-q)
+    g_q0 = -w_reg*2*(q_reg-q) -w_reg*2*(q-q_old)/T
     g = -2*Jac.T@log / T + g_q0
 
     k = np.eye(6)
@@ -55,7 +57,6 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
     g = -2*Jac.T@k@log / T + g_q0
 
     eye = np.eye(len(q))
-    # qp_A = spa.csc_matrix(np.vstack([eye, eye]))
     qp_A = spa.csc_matrix(np.vstack([eye]))
 
     # QDMAX = 200
@@ -76,9 +77,10 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
 
 
     # enables joint angle limits
+    TT = T
     qp_A = spa.csc_matrix(np.vstack([eye, eye]))
-    qd_max = np.hstack([qd_max, (q_max-q)/T])
-    qd_min = np.hstack([qd_min, (q_min-q)/T])
+    qd_max = np.hstack([qd_max, (q_max-q)/(TT)])
+    qd_min = np.hstack([qd_min, (q_min-q)/(TT)])
 
     qp_l, qp_u = qd_min, qd_max
 
@@ -88,11 +90,17 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5):
     print('status: {}'.format(results.info.status))
     return results.x
 
-
-def pin_FK(model, data, q, frame_id):
-    pin.computeJointJacobians(model, data, q)
+def pin_FK(model, data, q, frame_id, world_frame=False):
+    pin.forwardKinematics(model, data, q)
     pin.framesForwardKinematics(model, data, q)
-    return data.oMf[frame_id]
+
+    X = data.oMf[frame_id]
+
+    # if not world, then it's torso
+    if not world_frame:
+        X = data.oMf[model.getFrameId('torso')].actInv(X)
+    return X
+
 
 def kdl_FK(fk_solver, q):
     qq = kdl.JntArray(len(q))

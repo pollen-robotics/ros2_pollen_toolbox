@@ -59,6 +59,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.averaged_pose = {}
         self.max_joint_vel = {}
         self.pinmodel = {}
+        self.q_old = None
 
         self.symbolic_ik_solver = {}
         self.last_call_t = {}
@@ -472,28 +473,28 @@ class PollenKdlKinematics(LifecycleNode):
 
             ####################################################
             # pinocchio
-            # model = self.pinmodel[name]
-            # data = model.createData()
+            model = self.pinmodel[name]
+            data = model.createData()
 
 
-            # tip = name[0] + '_wrist_yaw'
-            # frame_id = model.getFrameId(tip)
+            tip = name[0] + '_arm_tip'
+            frame_id = model.getFrameId(tip)
             # joint_id = model.getJointId(tip)
-            # # print('tip:{} frame_id:{}'.format(tip, frame_id))
-            # Mcur = rh.pin_FK(model, data, q, frame_id)
-            # # Mcur = pin.SE3(rh.kdlFrame_to_np(rh.kdl_FK(self.fk_solver[name], q)))
-            # log = pin.log(Mcur.actInv(Mdes)).vector
-            # # log[:3] = Mdes.translation - Mcur.translation
-            # # X0_pin, X1_pin = Mcur, Mdes
-            # # log[3:] = X0_pin.rotation @ pin.log(X0_pin.rotation.T @ X1_pin.rotation)
+            # print('tip:{} frame_id:{}'.format(tip, frame_id))
+            Mcur = rh.pin_FK(model, data, q, frame_id)
+            # Mcur = pin.SE3(rh.kdlFrame_to_np(rh.kdl_FK(self.fk_solver[name], q)))
+            log = pin.log(Mcur.actInv(Mdes)).vector
+            # log[:3] = Mdes.translation - Mcur.translation
+            # X0_pin, X1_pin = Mcur, Mdes
+            # log[3:] = X0_pin.rotation @ pin.log(X0_pin.rotation.T @ X1_pin.rotation)
 
             # Jac = pin.computeJointJacobians(model, data, q)
             # Jac = pin.computeJointJacobian(model, data, q, joint_id)
             # Jac = pin.getJointJacobian(model, data, joint_id,
             #                            reference_frame=pin.LOCAL)
             # Jac = pin.computeJointJacobian(model, data, q, joint_id)
-            # Jac = pin.computeFrameJacobian(model, data, q, frame_id,
-            #                                reference_frame=pin.LOCAL)
+            Jac = pin.computeFrameJacobian(model, data, q, frame_id,
+                                           reference_frame=pin.LOCAL)
             # Jac = pin.getFrameJacobian(model, data, frame_id,
             #                            reference_frame=pin.LOCAL)
             # Jac = pin.getFrameJacobian(model, data, frame_id,
@@ -503,9 +504,9 @@ class PollenKdlKinematics(LifecycleNode):
             #                                reference_frame=pin.LOCAL_WORLD_ALIGNED)
             ####################################################
             # kdl
-            Jac = rh.kdl_jacobian(self.jac_solver[name], q)
-            Mcur = rh.kdl_FK(self.fk_solver[name], q)
-            log = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
+            # Jac = rh.kdl_jacobian(self.jac_solver[name], q)
+            # Mcur = rh.kdl_FK(self.fk_solver[name], q)
+            # log = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
             # log2 = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
             # log[3:] = log2[3:]
             # log = log2
@@ -528,13 +529,17 @@ class PollenKdlKinematics(LifecycleNode):
             T = 1/100 # [Hz]
 
             q_reg = np.zeros_like(q)
-            # q0=[0, 0, 0, -np.pi / 2, 0, 0, 0],
-            q_reg[2] = np.pi
+            # q_reg=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+            # q_reg[2] = -np.pi if name=='l_arm' else np.pi
+            q_reg = np.ones_like(q)
 
             print('    sol: {}'.format(sol))
             qd = rh.velqp(Jac, log, q, q_reg, T,
-                          # linear_factor=1000,
-                          w_reg=1e-5)
+                          linear_factor=20,
+                          # linear_factor=50,
+                          w_reg=1e-5,
+                          q_old=self.q_old,
+                          )
             qpsol = q + qd*T
             print('qpsol x: {}'.format(qpsol))
 
@@ -545,6 +550,7 @@ class PollenKdlKinematics(LifecycleNode):
 
             sol = qpsol
             # sol = transsol
+            self.q_old = qpsol
 
         else:
             error, sol = inverse_kinematics(
