@@ -22,9 +22,7 @@ try:
         # print the temperature every second
         if int(t) > last_t_int:
             last_t_int = int(t)
-            print(
-                f"Temperature: {temp}°C, Position: {pos}°, Goal: {goal}°, Time: {t:.2f}s"
-            )
+            print(f"Temperature: {temp}°C, Position: {pos}°, Goal: {goal}°, Time: {t:.2f}s")
 
         time.sleep(dt)
 finally:

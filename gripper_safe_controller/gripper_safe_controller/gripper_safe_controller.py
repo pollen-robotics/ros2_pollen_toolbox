@@ -76,26 +76,18 @@ class GripperSafeController(Node):
             open_pos = L_OPEN_POSITION if state.is_direct else R_OPEN_POSITION
             close_pos = L_CLOSE_POSITION if state.is_direct else R_CLOSE_POSITION
             self.limits[name] = (open_pos, close_pos)
-        self.logger.info(
-            f"Setup done, basic state: {self.gripper_states} with limits {self.limits}"
-        )
+        self.logger.info(f"Setup done, basic state: {self.gripper_states} with limits {self.limits}")
 
-        self.last_grippers_pid = {
-            name: (np.nan, np.nan, np.nan)
-            for name, state in self.gripper_states.items()
-        }
+        self.last_grippers_pid = {name: (np.nan, np.nan, np.nan) for name, state in self.gripper_states.items()}
 
-        self.last_torque_limit = {
-            name: np.nan for name, state in self.gripper_states.items()
-        }
-        
+        self.last_torque_limit = {name: np.nan for name, state in self.gripper_states.items()}
+
         self.joint_name = {name: "" for name, state in self.gripper_states.items()}
         for k in self.joint_name:
             if k.startswith("l"):
                 self.joint_name[k] = "l_hand_raw_motor_1"
             if k.startswith("r"):
                 self.joint_name[k] = "r_hand_raw_motor_1"
-                
 
         # Gripper command publisher
         self.gripper_forward_publisher = self.create_publisher(
@@ -176,9 +168,7 @@ class GripperSafeController(Node):
         for name, gripper_state in self.gripper_states.items():
             gripper_state.update(
                 new_present_position=self.grippers[name]["present_position"],
-                new_user_requested_goal_position=self.grippers[name][
-                    "user_requested_goal_position"
-                ],
+                new_user_requested_goal_position=self.grippers[name]["user_requested_goal_position"],
             )
 
         self.publish_goals()
@@ -222,7 +212,6 @@ class GripperSafeController(Node):
         for name, gripper_state in self.gripper_states.items():
             if gripper_state.torque_limit != self.last_torque_limit[name]:
                 msg.joint_names.append(self.joint_name[name])
-                
 
                 iv = InterfaceValue()
                 iv.interface_names = ["torque_limit"]
@@ -253,10 +242,7 @@ class GripperSafeController(Node):
                 if "gripper" not in k:
                     continue
                 try:
-                    if (
-                        v["type"]
-                        == "forward_command_controller/ForwardCommandController"
-                    ):
+                    if v["type"] == "forward_command_controller/ForwardCommandController":
                         forward_controllers.append(k)
                 except (KeyError, TypeError):
                     pass

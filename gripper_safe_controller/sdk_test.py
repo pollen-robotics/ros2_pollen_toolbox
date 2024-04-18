@@ -19,15 +19,15 @@ def gripper_test():
         print("Closing gripper")
         reachy.r_arm.gripper.close()
         reachy.l_arm.gripper.close()
-        #reachy.r_arm.gripper.set_opening(10)
-        #reachy.l_arm.gripper.set_opening(10)
+        # reachy.r_arm.gripper.set_opening(10)
+        # reachy.l_arm.gripper.set_opening(10)
         print(f"r={reachy.r_arm.gripper}")
         print(f"l={reachy.l_arm.gripper}")
 
         time.sleep(2.0)
         print("Opening gripper")
 
-        #reachy.r_arm.gripper.open()
+        # reachy.r_arm.gripper.open()
         reachy.l_arm.gripper.open()
         print(f"r={reachy.r_arm.gripper}")
         print(f"l={reachy.l_arm.gripper}")

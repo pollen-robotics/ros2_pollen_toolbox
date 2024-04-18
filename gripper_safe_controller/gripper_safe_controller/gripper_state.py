@@ -16,7 +16,7 @@ SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
 MAX_SAFE_ERROR = np.deg2rad(2.0)
 # TEMP setting a huge value here effectively disables the not so smart gripper
-MAX_COLLISION_ERROR = MAX_SAFE_ERROR #np.deg2rad(1000.0)  # MAX_SAFE_ERROR
+MAX_COLLISION_ERROR = MAX_SAFE_ERROR  # np.deg2rad(1000.0)  # MAX_SAFE_ERROR
 # 378 deg/s is the no load speed at 12V for the MX-64. However, the actual speed is lower due to the load.
 # This was directly measured as the average cruise speed during a closing motion
 MAX_SPEED = np.deg2rad(195)
@@ -33,7 +33,7 @@ DYNAMIC_ERROR = 0.140  # 0.099
 ## Control algorithm related parameters
 # Maximum error in rads that will be requested to the servo by this control algorithm.
 # This directly controls the maximum force that will be applied by the gripper. To get the actual force in N, use get_error_to_apply_force
-MAX_APPLIED_ERROR = SATURATION_ERROR # MAX_SAFE_ERROR * 0.5
+MAX_APPLIED_ERROR = SATURATION_ERROR  # MAX_SAFE_ERROR * 0.5
 HISTORY_LENGTH = 10
 # After a change in goal position, there is no possible collision detection during the first SKIP_EARLY_DTS control cycles
 # This is to avoid false positives during the acceleration phase. The gripper reaches its cruising speed after ~40ms.
@@ -98,16 +98,12 @@ class GripperState:
 
         self.logger = logger
         self.present_position = deque([present_position], HISTORY_LENGTH)
-        self.user_requested_goal_position = deque(
-            [user_requested_goal_position], HISTORY_LENGTH
-        )
+        self.user_requested_goal_position = deque([user_requested_goal_position], HISTORY_LENGTH)
 
-        self.interpolated_goal_position = deque(
-            [user_requested_goal_position], HISTORY_LENGTH
-        )
+        self.interpolated_goal_position = deque([user_requested_goal_position], HISTORY_LENGTH)
         self.error = deque([], HISTORY_LENGTH // 2)
         self.error.append(0.0)
-        
+
         self.in_collision = deque([False], HISTORY_LENGTH)
 
         self.safe_computed_goal_position = user_requested_goal_position
@@ -120,9 +116,7 @@ class GripperState:
 
         self.calculate_fit_and_derivative_of_opening()
 
-    def update(
-        self, new_present_position: float, new_user_requested_goal_position: float
-    ):
+    def update(self, new_present_position: float, new_user_requested_goal_position: float):
         self.present_position.append(new_present_position)
 
         # if self.has_changed_direction(new_user_requested_goal_position):
@@ -139,8 +133,8 @@ class GripperState:
         elif collision_state == CollisionState.ENTERING_COLLISION:
             # self.set_pid(p=P_SAFE_CLOSE, i=0.0, d=0.0)
             if self.name.startswith("r"):
-                self.logger.info(f"Setting torque limit weak !")
-            
+                self.logger.debug(f"Setting torque limit weak !")
+
             self.torque_limit = 15
             interpolated_goal_position = self.compute_fake_error_goal_position()
             self.safe_computed_goal_position = interpolated_goal_position
@@ -151,9 +145,9 @@ class GripperState:
 
         elif collision_state == CollisionState.LEAVING_COLLISION:
             if self.name.startswith("r"):
-                self.logger.info(f"Setting torque limit strong !")
-            
-            self.torque_limit = 50        
+                self.logger.debug(f"Setting torque limit strong !")
+
+            self.torque_limit = 50
             # self.set_pid(p=P_DIRECT_CONTROL, i=0.0, d=0.0)
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
@@ -171,10 +165,7 @@ class GripperState:
                 f"State: {collision_state}, pres_pos: {new_present_position}, interpol={interpolated_goal_position}, final_goal: {new_user_requested_goal_position}, err: {self.error[-1]}"
             )
             self.logger.debug(f"raw_error: {raw_error} better_error: {error}")
-        self.in_collision.append(
-            collision_state
-            in (CollisionState.ENTERING_COLLISION, CollisionState.STILL_COLLIDING)
-        )
+        self.in_collision.append(collision_state in (CollisionState.ENTERING_COLLISION, CollisionState.STILL_COLLIDING))
 
         self.elapsed_dts_since_change_of_direction += 1
         # self.elapsed_dts_since_collision += 1
@@ -217,15 +208,9 @@ class GripperState:
         if delta_pos > TOO_FAST_TO_COLLIDE:
             return False
         return (
-            (
-                filtered_error > MAX_COLLISION_ERROR
-                and self.user_requested_goal_position[-1] > self.present_position[-1]
-            )
+            (filtered_error > MAX_COLLISION_ERROR and self.user_requested_goal_position[-1] > self.present_position[-1])
             if self.is_direct
-            else (
-                filtered_error < -MAX_COLLISION_ERROR
-                and self.user_requested_goal_position[-1] < self.present_position[-1]
-            )
+            else (filtered_error < -MAX_COLLISION_ERROR and self.user_requested_goal_position[-1] < self.present_position[-1])
         )
 
     def leaving_collision(self) -> bool:
@@ -234,23 +219,16 @@ class GripperState:
 
         # This condition is triggered by a direct user command to release our grasp
         user_request_to_release = (
-            last_req_goal_pos < last_interp_goal_pos
-            if self.is_direct
-            else last_req_goal_pos > last_interp_goal_pos
+            last_req_goal_pos < last_interp_goal_pos if self.is_direct else last_req_goal_pos > last_interp_goal_pos
         )
 
         # This condition is triggered because we are moving again, due to either:
         #   - because the object was removed
         #   - because it was a false detection in the first place
-        moving_again = (
-            True#self.elapsed_dts_since_collision > self.present_position.maxlen
-            and (
-                (self.present_position[0] - self.present_position[-1])
-                < -MIN_MOVING_DIST
-                if self.is_direct
-                else (self.present_position[0] - self.present_position[-1])
-                > MIN_MOVING_DIST
-            )
+        moving_again = True and (  # self.elapsed_dts_since_collision > self.present_position.maxlen
+            (self.present_position[0] - self.present_position[-1]) < -MIN_MOVING_DIST
+            if self.is_direct
+            else (self.present_position[0] - self.present_position[-1]) > MIN_MOVING_DIST
         )
         # self.logger.info(
         #     f"user_request_to_release={user_request_to_release}, moving_again={moving_again}"
@@ -261,26 +239,18 @@ class GripperState:
         present_position = self.present_position[-1]
         last_goal_pos = self.user_requested_goal_position[-1]
 
-        return np.sign(last_goal_pos - present_position) != np.sign(
-            new_goal_pos - present_position
-        )
+        return np.sign(last_goal_pos - present_position) != np.sign(new_goal_pos - present_position)
 
     def compute_close_smart_goal_position(self) -> float:
         """Outputs a goal position that is always close to the previous goal position.
         So if the user requests a goal position that is far from the current position, this method will create an interpolation based on the max speed allowed.
         """
         last_req_goal_pos = self.user_requested_goal_position[-1]
-        goal_offset = MAX_INC_PER_DT * np.sign(
-            last_req_goal_pos - self.present_position[-1]
-        )
+        goal_offset = MAX_INC_PER_DT * np.sign(last_req_goal_pos - self.present_position[-1])
 
         next_goal_pos = self.interpolated_goal_position[-1] + goal_offset
 
-        return (
-            min(next_goal_pos, last_req_goal_pos)
-            if goal_offset > 0
-            else max(next_goal_pos, last_req_goal_pos)
-        )
+        return min(next_goal_pos, last_req_goal_pos) if goal_offset > 0 else max(next_goal_pos, last_req_goal_pos)
 
     def compute_fake_error_goal_position(self) -> float:
         """Simple method that will output a goal position at a fixed distance from the present position."""
@@ -343,9 +313,7 @@ class GripperState:
         If the relationship between the torque and the force is linear, this correction factor should be close to 1.
         A number greater than 1 means that the force applied by the gripper is larger.
         """
-        linear_approx = 100 / (
-            ANGLE_TO_PERCENT_OPENING[-1][0] - ANGLE_TO_PERCENT_OPENING[0][0]
-        )
+        linear_approx = 100 / (ANGLE_TO_PERCENT_OPENING[-1][0] - ANGLE_TO_PERCENT_OPENING[0][0])
 
         ratio = self.opening_derivative(angle) / linear_approx
         return ratio
@@ -382,9 +350,7 @@ class GripperState:
 
         # Create a symbolic polynomial
         x = sp.symbols("x")
-        symbolic_poly = sum(
-            [coeff * x**i for i, coeff in enumerate(poly_coefficients[::-1])]
-        )
+        symbolic_poly = sum([coeff * x**i for i, coeff in enumerate(poly_coefficients[::-1])])
 
         symbolic_derivative = sp.diff(symbolic_poly, x)
         self.opening_derivative = sp.lambdify(x, symbolic_derivative, "numpy")
@@ -416,9 +382,7 @@ if __name__ == "__main__":
     for angle in test_values:
         for force in forces:
             error = gripper.get_error_to_apply_force(angle, force)
-            print(
-                f"Angle: {np.rad2deg(angle):.0f}°, Force: {force}N, Error: {np.rad2deg(error):.0f}°"
-            )
+            print(f"Angle: {np.rad2deg(angle):.0f}°, Force: {force}N, Error: {np.rad2deg(error):.0f}°")
 
     # Torque values from 0N to 40N
     torques = np.linspace(0, 40, 100)
@@ -430,10 +394,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 8))
 
     for goal_position in goal_positions:
-        errors = [
-            gripper.get_error_to_apply_force(goal_position, torque)
-            for torque in torques
-        ]
+        errors = [gripper.get_error_to_apply_force(goal_position, torque) for torque in torques]
         plt.plot(
             torques,
             np.rad2deg(errors),

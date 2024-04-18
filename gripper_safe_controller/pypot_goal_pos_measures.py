@@ -24,9 +24,7 @@ try:
         # print the temperature every second
         if prev_goal != goal:
             prev_goal = goal
-            print(
-                f"Temperature: {temp}°C, Position: {pos}°, Goal: {goal}°, Time: {t:.2f}s"
-            )
+            print(f"Temperature: {temp}°C, Position: {pos}°, Goal: {goal}°, Time: {t:.2f}s")
         if abs(goal - start_pos) > max_error:
             print("End of test")
             continue
