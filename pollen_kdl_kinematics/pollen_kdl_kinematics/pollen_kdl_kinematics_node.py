@@ -481,9 +481,6 @@ class PollenKdlKinematics(LifecycleNode):
         raw_vel = (np.array(sol) - current_position)
         vel = np.clip(raw_vel, -self.max_joint_vel[name], self.max_joint_vel[name])
         # save the max speed for the next iteration
-        max_speed = np.max(np.abs(vel))
-        if max_speed > self.max_speed:
-            self.max_speed = max_speed
         if not np.allclose(raw_vel, vel):
             self.logger.warning(f"{name} Joint velocity limit reached. \nRaw vel: {raw_vel}\nClipped vel: {vel}")
 
