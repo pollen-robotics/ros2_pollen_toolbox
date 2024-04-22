@@ -1,14 +1,13 @@
 import copy
+import time
 from functools import partial
 from operator import ne
 from threading import Event
 from typing import List
-import time
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
@@ -21,6 +20,8 @@ from reachy2_symbolic_ik.utils import (
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
+
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
 from .kdl_kinematics import (
     forward_kinematics,
@@ -334,7 +335,9 @@ class PollenKdlKinematics(LifecycleNode):
             # TODO : Get a current position that take the multiturn into consideration
             # Otherwise, when there is no call for more than 0.5s, the joints will be cast between -pi and pi
             # -> If you pause a rosbag during a multiturn and restart it, the previous_sol will be wrong by 2pi
-            self.previous_sol[name] = np.array(self.get_current_position(self.chain[name]))
+            self.previous_sol[name] = np.array(
+                self.get_current_position(self.chain[name])
+            )
             # self.logger.warning(
             #     f"{name} previous_sol is None. Setting it to current position : {self.previous_sol[name]}"
             # )
@@ -437,7 +440,7 @@ class PollenKdlKinematics(LifecycleNode):
     ) -> GetInverseKinematics.Response:
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
-        if "arm" in name:
+        if False and "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
             # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
@@ -460,7 +463,9 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
-        if "arm" in name:
+        q0 = np.array(self.get_current_position(self.chain[name]))
+
+        if False and "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics(name, M)
             # sol = self.limit_orbita3d_joints_wrist(sol)
         else:
@@ -470,7 +475,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            # sol = self.limit_orbita3d_joints(sol)
 
         # TODO: check error
 
