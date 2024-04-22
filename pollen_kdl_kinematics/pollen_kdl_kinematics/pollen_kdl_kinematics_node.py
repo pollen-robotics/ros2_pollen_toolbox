@@ -174,7 +174,7 @@ class PollenKdlKinematics(LifecycleNode):
                     ),
                 )
                 self.averaged_pose[arm] = PoseAverager(window_length=1)
-                self.default_max_joint_vel = 0.3 # Angular difference between current joint and requested joint.
+                self.default_max_joint_vel = 0.6 # Angular difference between current joint and requested joint.
                 self.max_joint_vel[arm] = np.array([self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel])
                 self.logger.info(
                     f'Adding subscription on "{self.target_sub[arm].topic}"...'
