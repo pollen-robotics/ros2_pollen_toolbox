@@ -1,4 +1,5 @@
 import copy
+from curses import raw
 from functools import partial
 from operator import ne
 from threading import Event
@@ -173,7 +174,8 @@ class PollenKdlKinematics(LifecycleNode):
                     ),
                 )
                 self.averaged_pose[arm] = PoseAverager(window_length=1)
-                self.max_joint_vel[arm] = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+                self.default_max_joint_vel = 0.3 # Angular difference between current joint and requested joint.
+                self.max_joint_vel[arm] = np.array([self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel])
                 self.logger.info(
                     f'Adding subscription on "{self.target_sub[arm].topic}"...'
                 )
@@ -252,7 +254,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.averaged_target_sub["head"] = sub
             self.averaged_pose["head"] = PoseAverager(window_length=1)
 
-            self.max_joint_vel["head"] = np.array([0.1, 0.1, 0.1])
+            self.max_joint_vel["head"] = np.array([self.default_max_joint_vel,self.default_max_joint_vel,self.default_max_joint_vel])
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
             self.chain["head"] = chain
@@ -471,12 +473,27 @@ class PollenKdlKinematics(LifecycleNode):
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
             sol = self.limit_orbita3d_joints(sol)
+                # TODO: check error
+                
+        # Limit the speed of the joints if needed
+        # TODO divide the delta by the control period to manipulate speeds
+        current_position = np.array(self.get_current_position(self.chain[name]))
+        raw_vel = (np.array(sol) - current_position)
+        vel = np.clip(raw_vel, -self.max_joint_vel[name], self.max_joint_vel[name])
+        # save the max speed for the next iteration
+        max_speed = np.max(np.abs(vel))
+        if max_speed > self.max_speed:
+            self.max_speed = max_speed
+        if not np.allclose(raw_vel, vel):
+            self.logger.warning(f"{name} Joint velocity limit reached. \nRaw vel: {raw_vel}\nClipped vel: {vel}")
 
-        # TODO: check error
-
+            
+        smoothed_sol = current_position + vel
         msg = Float64MultiArray()
-        msg.data = sol
-
+        msg.data = smoothed_sol.tolist()
+        
+        # msg = Float64MultiArray()
+        # msg.data = sol
         forward_publisher.publish(msg)
 
     def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
