@@ -11,6 +11,10 @@ from scipy import interpolate
 P_GAIN = 4.0
 # max_torque set in the servo (max value is 100). This is a firmware configuration.
 DYNAMIXEL_MAX_TORQUE = 50
+# The torque limit is a value between 0 and 100 that is sent to the servo. It is a percentage of DYNAMIXEL_MAX_TORQUE
+# STRONG_TORQUE_LIMIT is used when the gripper is not in collision, WEAK_TORQUE_LIMIT is used when the gripper is in collision
+STRONG_TORQUE_LIMIT = 50
+WEAK_TORQUE_LIMIT = 15
 # With a P of 4, any error greater than SATURATION_ERROR will put the PWM at 100%
 SATURATION_ERROR = np.deg2rad(5.7)
 # This is the maximum continuous error that the servo can apply without overheating (>65° in a room at 20° and a P of 4).
@@ -91,7 +95,6 @@ class GripperState:
         i: float = 0.0,
         d: float = 0.0,
         logger=None,
-        torque_limit=50.0,
     ) -> None:
         self.name = name
         self.is_direct = is_direct
@@ -112,7 +115,7 @@ class GripperState:
         # self.elapsed_dts_since_collision = 0
 
         self.pid = p, i, d
-        self.torque_limit = torque_limit
+        self.torque_limit = STRONG_TORQUE_LIMIT
 
         self.calculate_fit_and_derivative_of_opening()
 
@@ -129,25 +132,21 @@ class GripperState:
         if collision_state == CollisionState.NO_COLLISION:
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
+            self.torque_limit = STRONG_TORQUE_LIMIT
 
         elif collision_state == CollisionState.ENTERING_COLLISION:
             # self.set_pid(p=P_SAFE_CLOSE, i=0.0, d=0.0)
-            if self.name.startswith("r"):
-                self.logger.debug(f"Setting torque limit weak !")
-
-            self.torque_limit = 15
+            self.torque_limit = WEAK_TORQUE_LIMIT
             interpolated_goal_position = self.compute_fake_error_goal_position()
             self.safe_computed_goal_position = interpolated_goal_position
 
         elif collision_state == CollisionState.STILL_COLLIDING:
             interpolated_goal_position = self.compute_fake_error_goal_position()
             self.safe_computed_goal_position = interpolated_goal_position
+            self.torque_limit = WEAK_TORQUE_LIMIT
 
         elif collision_state == CollisionState.LEAVING_COLLISION:
-            if self.name.startswith("r"):
-                self.logger.debug(f"Setting torque limit strong !")
-
-            self.torque_limit = 50
+            self.torque_limit = STRONG_TORQUE_LIMIT
             # self.set_pid(p=P_DIRECT_CONTROL, i=0.0, d=0.0)
             interpolated_goal_position = self.compute_close_smart_goal_position()
             self.safe_computed_goal_position = new_user_requested_goal_position
