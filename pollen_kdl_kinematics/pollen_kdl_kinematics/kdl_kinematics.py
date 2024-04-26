@@ -2,11 +2,9 @@
 from typing import Tuple
 
 import numpy as np
-from scipy.spatial.transform import Rotation
-
-from geometry_msgs.msg import Pose
-
 import PyKDL as kdl
+from geometry_msgs.msg import Pose
+from scipy.spatial.transform import Rotation
 
 from .kdl_parser_py import urdf
 
@@ -15,18 +13,12 @@ def generate_solver(urdf_str: str, root: str, tip: str, L: np.ndarray = np.array
     """Create an FK/IK solvers for each arm (left/right)."""
     success, urdf_tree = urdf.treeFromString(urdf_str)
     if not success:
-        raise IOError('Could not parse the URDF!')
+        raise IOError("Could not parse the URDF!")
 
     chain = urdf_tree.getChain(root, tip)
     fk_solver = kdl.ChainFkSolverPos_recursive(chain)
 
-    ik_solver = kdl.ChainIkSolverPos_LMA(
-        chain,
-        eps=1e-5,
-        maxiter=500,
-        eps_joints=1e-15,
-        L=L
-    )
+    ik_solver = kdl.ChainIkSolverPos_LMA(chain, eps=1e-5, maxiter=500, eps_joints=1e-15, L=L)
 
     return chain, fk_solver, ik_solver
 

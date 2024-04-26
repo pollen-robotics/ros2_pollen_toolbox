@@ -7,32 +7,24 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
+                       ReliabilityPolicy)
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (
-    angle_diff,
-    get_best_continuous_theta,
-    tend_to_prefered_theta,
-)
+from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
+                                       tend_to_prefered_theta)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-from .kdl_kinematics import (
-    forward_kinematics,
-    generate_solver,
-    inverse_kinematics,
-    ros_pose_to_matrix,
-)
+from .kdl_kinematics import (forward_kinematics, generate_solver,
+                             inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
     rotation_matrix = homogeneous_matrix[:3, :3]
-    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler(
-        "xyz", degrees=degrees
-    )
+    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler("xyz", degrees=degrees)
     return position, euler_angles
 
 
@@ -80,9 +72,7 @@ class PollenKdlKinematics(LifecycleNode):
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
-            chain, fk_solver, ik_solver = generate_solver(
-                self.urdf, "torso", f"{prefix}_arm_tip"
-            )
+            chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
             self.symbolic_ik_solver[arm] = SymbolicIK(
                 arm=arm,
@@ -153,9 +143,7 @@ class PollenKdlKinematics(LifecycleNode):
                         forward_publisher=forward_position_pub,
                     ),
                 )
-                self.logger.info(
-                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
-                )
+                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
                 self.averaged_target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
@@ -171,9 +159,7 @@ class PollenKdlKinematics(LifecycleNode):
                 )
                 self.averaged_pose[arm] = PoseAverager(window_length=1)
                 self.max_joint_vel[arm] = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-                self.logger.info(
-                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
-                )
+                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
@@ -261,9 +247,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
-        self.logger.info(
-            "Configuring state has been called, going into inactive to release event trigger"
-        )
+        self.logger.info("Configuring state has been called, going into inactive to release event trigger")
         return TransitionCallbackReturn.SUCCESS
 
     def forward_kinematics_srv(
@@ -273,9 +257,7 @@ class PollenKdlKinematics(LifecycleNode):
         name,
     ) -> GetForwardKinematics.Response:
         try:
-            joint_position = self.check_position(
-                request.joint_position, self.chain[name]
-            )
+            joint_position = self.check_position(request.joint_position, self.chain[name])
         except KeyError:
             response.success = False
             return response
@@ -322,9 +304,7 @@ class PollenKdlKinematics(LifecycleNode):
         if self.previous_sol[name] is None:
             self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
-        self.logger.warning(
-            f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
-        )
+        self.logger.warning(f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}")
 
         goal_position, goal_orientation = get_euler_from_homogeneous_matrix(M)
 
@@ -337,9 +317,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         goal_pose = np.array([goal_position, goal_orientation])
 
-        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-            name
-        ].is_reachable(goal_pose)
+        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
         if is_reachable:
             is_reachable, theta, state = get_best_continuous_theta(
                 self.previous_theta[name],
@@ -351,15 +329,11 @@ class PollenKdlKinematics(LifecycleNode):
             )
             self.previous_theta[name] = theta
             self.ik_joints, elbow_position = theta_to_joints_func(theta)
-            self.logger.warning(
-                f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            )
+            self.logger.warning(f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}")
 
         else:
             self.logger.warning(f"{name} Pose not reachable but doing our best")
-            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                name
-            ].is_reachable_no_limits(goal_pose)
+            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(goal_pose)
             if is_reachable:
                 is_reachable, theta = tend_to_prefered_theta(
                     self.previous_theta[name],
@@ -516,9 +490,7 @@ class PollenKdlKinematics(LifecycleNode):
             joints = [pos[j] for j in self.get_chain_joints_name(chain)]
             return joints
         except KeyError:
-            self.logger.warning(
-                f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
-            )
+            self.logger.warning(f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})")
             raise
 
     def get_chain_joints_name(self, chain):
