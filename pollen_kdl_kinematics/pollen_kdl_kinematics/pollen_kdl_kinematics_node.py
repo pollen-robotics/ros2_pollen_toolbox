@@ -87,7 +87,8 @@ class PollenKdlKinematics(LifecycleNode):
                 gripper_size=0.10,
                 wrist_limit=45,
                 # This is the "correct" stuff for alpha
-                shoulder_orientation_offset=[0, 0, 15],
+                # shoulder_orientation_offset=[10, 0, 15],
+                # elbow_orientation_offset=[0, 0, 0],
                 # This is the "wrong" values currently used by the alpha
                 # shoulder_orientation_offset=[0, 0, 15],
                 # shoulder_position=[-0.0479, -0.1913, 0.025],
