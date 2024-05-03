@@ -1,9 +1,5 @@
 import copy
 import time
-<<<<<<< HEAD
-from curses import raw
-=======
->>>>>>> 0603d00c20d9ad7e047bb23920ac722b655aca5b
 from functools import partial
 from threading import Event
 from typing import List
@@ -22,11 +18,8 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-<<<<<<< HEAD
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
-=======
->>>>>>> 0603d00c20d9ad7e047bb23920ac722b655aca5b
 from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
