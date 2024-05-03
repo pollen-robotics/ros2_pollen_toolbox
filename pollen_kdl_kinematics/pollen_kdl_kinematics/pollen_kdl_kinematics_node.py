@@ -8,20 +8,16 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
-                       ReliabilityPolicy)
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
-                                       limit_theta_to_interval,
-                                       tend_to_prefered_theta)
+from reachy2_symbolic_ik.utils import angle_diff, get_best_continuous_theta, limit_theta_to_interval, tend_to_prefered_theta
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
-from .kdl_kinematics import (forward_kinematics, generate_solver,
-                             inverse_kinematics, ros_pose_to_matrix)
+from .kdl_kinematics import forward_kinematics, generate_solver, inverse_kinematics, ros_pose_to_matrix
 from .pose_averager import PoseAverager
 
 
@@ -466,11 +462,10 @@ class PollenKdlKinematics(LifecycleNode):
         # if not np.allclose(raw_vel, vel):
         #     self.logger.warning(f"{name} Joint velocity limit reached. \nRaw vel: {raw_vel}\nClipped vel: {vel}")
 
-            
         # smoothed_sol = current_position + vel
         # msg = Float64MultiArray()
         # msg.data = smoothed_sol.tolist()
-        
+
         msg = Float64MultiArray()
         msg.data = sol
         forward_publisher.publish(msg)

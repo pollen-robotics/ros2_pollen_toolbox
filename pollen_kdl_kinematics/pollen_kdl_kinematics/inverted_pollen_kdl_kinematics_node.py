@@ -7,17 +7,14 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
-                       ReliabilityPolicy)
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
-                                       tend_to_prefered_theta)
+from reachy2_symbolic_ik.utils import angle_diff, get_best_continuous_theta, tend_to_prefered_theta
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-from .kdl_kinematics import (forward_kinematics, generate_solver,
-                             inverse_kinematics, ros_pose_to_matrix)
+from .kdl_kinematics import forward_kinematics, generate_solver, inverse_kinematics, ros_pose_to_matrix
 from .pose_averager import PoseAverager
 
 
