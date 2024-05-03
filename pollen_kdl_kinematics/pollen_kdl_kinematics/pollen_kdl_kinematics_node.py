@@ -1,34 +1,29 @@
 import copy
+import time
 from curses import raw
 from functools import partial
 from operator import ne
 from threading import Event
 from typing import List
-import time
 
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
+                       ReliabilityPolicy)
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (
-    angle_diff,
-    get_best_continuous_theta,
-    limit_theta_to_interval,
-    tend_to_prefered_theta,
-)
+from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
+                                       limit_theta_to_interval,
+                                       tend_to_prefered_theta)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-from .kdl_kinematics import (
-    forward_kinematics,
-    generate_solver,
-    inverse_kinematics,
-    ros_pose_to_matrix,
-)
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
+
+from .kdl_kinematics import (forward_kinematics, generate_solver,
+                             inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
 
@@ -476,21 +471,22 @@ class PollenKdlKinematics(LifecycleNode):
                 # TODO: check error
                 
         # Limit the speed of the joints if needed
+        # TODO FIXME disabled this "safety" because it can create very fast multiturns.
         # TODO divide the delta by the control period to manipulate speeds
-        current_position = np.array(self.get_current_position(self.chain[name]))
-        raw_vel = (np.array(sol) - current_position)
-        vel = np.clip(raw_vel, -self.max_joint_vel[name], self.max_joint_vel[name])
-        # save the max speed for the next iteration
-        if not np.allclose(raw_vel, vel):
-            self.logger.warning(f"{name} Joint velocity limit reached. \nRaw vel: {raw_vel}\nClipped vel: {vel}")
+        # current_position = np.array(self.get_current_position(self.chain[name]))
+        # raw_vel = (np.array(sol) - current_position)
+        # vel = np.clip(raw_vel, -self.max_joint_vel[name], self.max_joint_vel[name])
+        # # save the max speed for the next iteration
+        # if not np.allclose(raw_vel, vel):
+        #     self.logger.warning(f"{name} Joint velocity limit reached. \nRaw vel: {raw_vel}\nClipped vel: {vel}")
 
             
-        smoothed_sol = current_position + vel
-        msg = Float64MultiArray()
-        msg.data = smoothed_sol.tolist()
-        
+        # smoothed_sol = current_position + vel
         # msg = Float64MultiArray()
-        # msg.data = sol
+        # msg.data = smoothed_sol.tolist()
+        
+        msg = Float64MultiArray()
+        msg.data = sol
         forward_publisher.publish(msg)
 
     def on_averaged_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
