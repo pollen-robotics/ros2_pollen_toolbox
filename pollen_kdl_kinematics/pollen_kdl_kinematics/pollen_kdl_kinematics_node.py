@@ -1,8 +1,10 @@
 import copy
 import time
+<<<<<<< HEAD
 from curses import raw
+=======
+>>>>>>> 0603d00c20d9ad7e047bb23920ac722b655aca5b
 from functools import partial
-from operator import ne
 from threading import Event
 from typing import List
 
@@ -20,8 +22,11 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
+<<<<<<< HEAD
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
+=======
+>>>>>>> 0603d00c20d9ad7e047bb23920ac722b655aca5b
 from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
@@ -30,9 +35,7 @@ from .pose_averager import PoseAverager
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
     rotation_matrix = homogeneous_matrix[:3, :3]
-    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler(
-        "xyz", degrees=degrees
-    )
+    euler_angles = Rotation.from_matrix(rotation_matrix).as_euler("xyz", degrees=degrees)
     return position, euler_angles
 
 
@@ -83,9 +86,7 @@ class PollenKdlKinematics(LifecycleNode):
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
-            chain, fk_solver, ik_solver = generate_solver(
-                self.urdf, "torso", f"{prefix}_arm_tip"
-            )
+            chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
             self.symbolic_ik_solver[arm] = SymbolicIK(
                 arm=arm,
@@ -152,9 +153,7 @@ class PollenKdlKinematics(LifecycleNode):
                         forward_publisher=forward_position_pub,
                     ),
                 )
-                self.logger.info(
-                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
-                )
+                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
                 self.averaged_target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
@@ -169,11 +168,19 @@ class PollenKdlKinematics(LifecycleNode):
                     ),
                 )
                 self.averaged_pose[arm] = PoseAverager(window_length=1)
-                self.default_max_joint_vel = 0.6 # Angular difference between current joint and requested joint.
-                self.max_joint_vel[arm] = np.array([self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel])
-                self.logger.info(
-                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
+                self.default_max_joint_vel = 0.6  # Angular difference between current joint and requested joint.
+                self.max_joint_vel[arm] = np.array(
+                    [
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                        self.default_max_joint_vel,
+                    ]
                 )
+                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
@@ -249,7 +256,9 @@ class PollenKdlKinematics(LifecycleNode):
             self.averaged_target_sub["head"] = sub
             self.averaged_pose["head"] = PoseAverager(window_length=1)
 
-            self.max_joint_vel["head"] = np.array([self.default_max_joint_vel,self.default_max_joint_vel,self.default_max_joint_vel])
+            self.max_joint_vel["head"] = np.array(
+                [self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel]
+            )
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
             self.chain["head"] = chain
@@ -261,9 +270,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
-        self.logger.info(
-            "Configuring state has been called, going into inactive to release event trigger"
-        )
+        self.logger.info("Configuring state has been called, going into inactive to release event trigger")
         return TransitionCallbackReturn.SUCCESS
 
     def forward_kinematics_srv(
@@ -273,9 +280,7 @@ class PollenKdlKinematics(LifecycleNode):
         name,
     ) -> GetForwardKinematics.Response:
         try:
-            joint_position = self.check_position(
-                request.joint_position, self.chain[name]
-            )
+            joint_position = self.check_position(request.joint_position, self.chain[name])
         except KeyError:
             response.success = False
             return response
@@ -347,9 +352,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         goal_pose = np.array([goal_position, goal_orientation])
 
-        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-            name
-        ].is_reachable(goal_pose)
+        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
         if is_reachable:
             is_reachable, theta, state = get_best_continuous_theta(
                 self.previous_theta[name],
@@ -361,25 +364,19 @@ class PollenKdlKinematics(LifecycleNode):
             )
             # self.logger.warning(
             #    f"name: {name}, theta: {theta}")
-            theta = limit_theta_to_interval(
-                theta, self.previous_theta[name], interval_limit
-            )
+            theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
             # self.logger.warning(
             #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}, state: {state}"
             # )
             self.previous_theta[name] = theta
-            ik_joints, elbow_position = theta_to_joints_func(
-                theta, previous_joints=self.previous_sol[name]
-            )
+            ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             # self.logger.warning(
             #    f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
             # )
 
         else:
             # self.logger.warning(f"{name} Pose not reachable but doing our best")
-            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[
-                name
-            ].is_reachable_no_limits(goal_pose)
+            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(goal_pose)
             if is_reachable:
                 is_reachable, theta = tend_to_prefered_theta(
                     self.previous_theta[name],
@@ -388,16 +385,12 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max,
                     goal_theta=prefered_theta,
                 )
-                theta = limit_theta_to_interval(
-                    theta, self.previous_theta[name], interval_limit
-                )
+                theta = limit_theta_to_interval(theta, self.previous_theta[name], interval_limit)
                 # self.logger.warning(
                 #    f"name: {name}, theta: {theta}, previous_theta: {self.previous_theta[name]}"
                 # )
                 self.previous_theta[name] = theta
-                ik_joints, elbow_position = theta_to_joints_func(
-                    theta, previous_joints=self.previous_sol[name]
-                )
+                ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             else:
                 self.logger.error(
                     f"{name} Pose not reachable, this has to be fixed by projecting far poses to reachable sphere"
@@ -468,8 +461,8 @@ class PollenKdlKinematics(LifecycleNode):
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
             sol = self.limit_orbita3d_joints(sol)
-                # TODO: check error
-                
+            # TODO: check error
+
         # Limit the speed of the joints if needed
         # TODO FIXME disabled this "safety" because it can create very fast multiturns.
         # TODO divide the delta by the control period to manipulate speeds
@@ -567,9 +560,7 @@ class PollenKdlKinematics(LifecycleNode):
             joints = [pos[j] for j in self.get_chain_joints_name(chain)]
             return joints
         except KeyError:
-            self.logger.warning(
-                f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
-            )
+            self.logger.warning(f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})")
             raise
 
     def get_chain_joints_name(self, chain):
@@ -605,13 +596,9 @@ class PollenKdlKinematics(LifecycleNode):
     def limit_orbita3d_joints(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D. i.e. casting into Orbita's cone."""
         # self.logger.info(f"HEAD initial: {joints}")
-        rotation = Rotation.from_euler(
-            "XYZ", [joints[0], joints[1], joints[2]], degrees=False
-        )
+        rotation = Rotation.from_euler("XYZ", [joints[0], joints[1], joints[2]], degrees=False)
         new_joints = rotation.as_euler("ZYZ", degrees=False)
-        new_joints[1] = min(
-            self.orbita3D_max_angle, max(-self.orbita3D_max_angle, new_joints[1])
-        )
+        new_joints[1] = min(self.orbita3D_max_angle, max(-self.orbita3D_max_angle, new_joints[1]))
         rotation = Rotation.from_euler("ZYZ", new_joints, degrees=False)
         new_joints = rotation.as_euler("XYZ", degrees=False)
         # self.logger.info(f"HEAD final: {new_joints}")
