@@ -13,6 +13,7 @@ from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
                                        get_best_discrete_theta,
+                                       get_best_discrete_theta_min_mouvement,
                                        limit_theta_to_interval,
                                        tend_to_prefered_theta)
 from scipy.spatial.transform import Rotation
@@ -428,13 +429,22 @@ class PollenKdlKinematics(LifecycleNode):
         is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
         if is_reachable:
             # Explores the interval to find a solution with no collision elbow-torso
-            is_reachable, theta, state = get_best_discrete_theta(
+            # is_reachable, theta, state = get_best_discrete_theta(
+            #     self.previous_theta[name],
+            #     interval,
+            #     theta_to_joints_func,
+            #     self.nb_search_points,
+            #     prefered_theta,
+            #     self.symbolic_ik_solver[name].arm,
+            # )
+            is_reachable, theta, state = get_best_discrete_theta_min_mouvement(
                 self.previous_theta[name],
                 interval,
                 theta_to_joints_func,
                 self.nb_search_points,
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
+                np.array(self.get_current_position(self.chain[name]))
             )
             
         if is_reachable:
