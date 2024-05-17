@@ -436,9 +436,9 @@ class PollenKdlKinematics(LifecycleNode):
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
             )
-            ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             
         if is_reachable:
+            ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             ik_joints = self.limit_orbita3d_joints_wrist(ik_joints)
             ik_joints = self.allow_multiturn(ik_joints, np.array(self.get_current_position(self.chain[name])), name)
         else :
