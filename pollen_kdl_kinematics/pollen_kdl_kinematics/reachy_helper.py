@@ -48,7 +48,7 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
     if q_old is None:
         q_old = np.zeros_like(q)
 
-    g_q0 = -w_reg*2*(q_reg-q) -w_reg*2*(q-q_old)/T
+    g_q0 = -w_reg*2*(q_reg-q)# -w_reg*2*(q-q_old)/T
     g = -2*Jac.T@log / T + g_q0
 
     k = np.eye(6)
@@ -70,8 +70,11 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
     # joint limits
     q_max =  np.inf*np.ones_like(q)
     q_min = -np.inf*np.ones_like(q)
-    # q_max =   np.pi*np.ones_like(q)
-    # q_min =  -np.pi*np.ones_like(q)
+    q_max =   np.pi*np.ones_like(q)
+    q_min =  -np.pi*np.ones_like(q)
+    factor = 0.3
+    q_max =factor* np.pi*np.ones_like(q)
+    q_min =factor*-np.pi*np.ones_like(q)
     # q_max = np.array([1.57079633, 0., 1.57079633, 0.1, 0.35, 0.35, 1.57])
     # q_min = np.array([-1.57079633, -1.57079633, -1.57079633, -2.25, -0.35, -0.35, -1.57])
 

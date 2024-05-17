@@ -2,7 +2,6 @@ import copy
 import time
 from functools import partial
 from threading import Event
-from time import time
 from typing import List
 
 import numpy as np
@@ -83,7 +82,7 @@ class PollenKdlKinematics(LifecycleNode):
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
-            chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
+            chain, fk_solver, ik_solver, jac_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
             self.symbolic_ik_solver[arm] = SymbolicIK(
                 arm=arm,
@@ -529,15 +528,17 @@ class PollenKdlKinematics(LifecycleNode):
             T = 1/100 # [Hz]
 
             q_reg = np.zeros_like(q)
-            # q_reg=[0, 0, 0, -np.pi / 2, 0, 0, 0],
+            # q_reg= np.array([0, 0, -np.pi / 2, 0, 0, 0])
+            q_reg[1] = -np.pi/2
             # q_reg[2] = -np.pi if name=='l_arm' else np.pi
-            q_reg = np.ones_like(q)
+            # q_reg = np.ones_like(q)
 
             print('    sol: {}'.format(sol))
             qd = rh.velqp(Jac, log, q, q_reg, T,
-                          linear_factor=20,
+                          # linear_factor=20,
                           # linear_factor=50,
-                          w_reg=1e-5,
+                          w_reg=1e-3,
+                          # w_reg=100000,
                           q_old=self.q_old,
                           )
             qpsol = q + qd*T
