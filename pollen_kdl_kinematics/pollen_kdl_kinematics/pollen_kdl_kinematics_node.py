@@ -7,23 +7,28 @@ from typing import List
 import numpy as np
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
-                       ReliabilityPolicy)
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
-                                       get_best_discrete_theta,
-                                       get_best_discrete_theta_min_mouvement,
-                                       limit_theta_to_interval,
-                                       tend_to_prefered_theta)
+from reachy2_symbolic_ik.utils import (
+    angle_diff,
+    get_best_continuous_theta,
+    get_best_discrete_theta,
+    get_best_discrete_theta_min_mouvement,
+    limit_theta_to_interval,
+    tend_to_prefered_theta,
+)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
 
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
-
-from .kdl_kinematics import (forward_kinematics, generate_solver,
-                             inverse_kinematics, ros_pose_to_matrix)
+from .kdl_kinematics import (
+    forward_kinematics,
+    generate_solver,
+    inverse_kinematics,
+    ros_pose_to_matrix,
+)
 from .pose_averager import PoseAverager
 
 
@@ -254,7 +259,11 @@ class PollenKdlKinematics(LifecycleNode):
             self.averaged_pose["head"] = PoseAverager(window_length=1)
 
             self.max_joint_vel["head"] = np.array(
-                [self.default_max_joint_vel, self.default_max_joint_vel, self.default_max_joint_vel]
+                [
+                    self.default_max_joint_vel,
+                    self.default_max_joint_vel,
+                    self.default_max_joint_vel,
+                ]
             )
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
@@ -328,7 +337,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.previous_theta[name] = prefered_theta
 
         if self.previous_sol[name] is None:
-            # if the arm move since last call, we need to update the previous_sol
+            # if the arm moved since last call, we need to update the previous_sol
             # self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             # TODO : Get a current position that take the multiturn into consideration
             # Otherwise, when there is no call for more than 0.5s, the joints will be cast between -pi and pi
@@ -349,7 +358,14 @@ class PollenKdlKinematics(LifecycleNode):
 
         goal_pose = np.array([goal_position, goal_orientation])
 
-        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
+        (
+            is_reachable,
+            interval,
+            theta_to_joints_func,
+            state_reachable,
+        ) = self.symbolic_ik_solver[
+            name
+        ].is_reachable(goal_pose)
         if is_reachable:
             is_reachable, theta, state = get_best_continuous_theta(
                 self.previous_theta[name],
@@ -372,6 +388,7 @@ class PollenKdlKinematics(LifecycleNode):
             # )
 
         else:
+            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
             # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(goal_pose)
             if is_reachable:
@@ -415,7 +432,7 @@ class PollenKdlKinematics(LifecycleNode):
         # TODO reactivate a smoothing technique
         # self.logger.warning(f"{name} ik={ik_joints}")
         return ik_joints, is_reachable
-    
+
     def symbolic_inverse_kinematics_discrete(self, name, M):
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -426,36 +443,46 @@ class PollenKdlKinematics(LifecycleNode):
         goal_pose = np.array([goal_position, goal_orientation])
 
         # Checks if an interval exists that handles the wrist limits and the elbow limits
-        is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
+        (
+            is_reachable,
+            interval,
+            theta_to_joints_func,
+            state_reachable,
+        ) = self.symbolic_ik_solver[
+            name
+        ].is_reachable(goal_pose)
         if is_reachable:
             # Explores the interval to find a solution with no collision elbow-torso
-            # is_reachable, theta, state = get_best_discrete_theta(
-            #     self.previous_theta[name],
-            #     interval,
-            #     theta_to_joints_func,
-            #     self.nb_search_points,
-            #     prefered_theta,
-            #     self.symbolic_ik_solver[name].arm,
-            # )
-            is_reachable, theta, state = get_best_discrete_theta_min_mouvement(
+            is_reachable, theta, state = get_best_discrete_theta(
                 self.previous_theta[name],
                 interval,
                 theta_to_joints_func,
                 self.nb_search_points,
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
-                np.array(self.get_current_position(self.chain[name]))
             )
-            
+            # is_reachable, theta, state = get_best_discrete_theta_min_mouvement(
+            #     self.previous_theta[name],
+            #     interval,
+            #     theta_to_joints_func,
+            #     self.nb_search_points,
+            #     prefered_theta,
+            #     self.symbolic_ik_solver[name].arm,
+            #     np.array(self.get_current_position(self.chain[name]))
+            # )
+            self.logger.info(f"state get_best_discrete_theta: {state}")
+            self.logger.info(f"Best theta: {theta}")
+        else:
+            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
+
         if is_reachable:
             ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             ik_joints = self.limit_orbita3d_joints_wrist(ik_joints)
             ik_joints = self.allow_multiturn(ik_joints, np.array(self.get_current_position(self.chain[name])), name)
-        else :
+        else:
             ik_joints = np.array(self.get_current_position(self.chain[name]))
 
         return ik_joints, is_reachable
-
 
     def inverse_kinematics_srv(
         self,
@@ -467,6 +494,7 @@ class PollenKdlKinematics(LifecycleNode):
         q0 = request.q0.position
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
+            # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -612,10 +640,12 @@ class PollenKdlKinematics(LifecycleNode):
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
         self.logger.warning(f"Joints: {new_joints}")
-        
+
         for i in range(len(new_joints)):
             if i == 0:
-                self.logger.warning(f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}")
+                self.logger.warning(
+                    f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}"
+                )
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
