@@ -15,7 +15,6 @@ from reachy2_symbolic_ik.utils import (
     angle_diff,
     get_best_continuous_theta,
     get_best_discrete_theta,
-    get_best_discrete_theta_min_mouvement,
     limit_theta_to_interval,
     tend_to_prefered_theta,
 )
@@ -470,10 +469,10 @@ class PollenKdlKinematics(LifecycleNode):
             #     self.symbolic_ik_solver[name].arm,
             #     np.array(self.get_current_position(self.chain[name]))
             # )
-            self.logger.info(f"state get_best_discrete_theta: {state}")
-            self.logger.info(f"Best theta: {theta}")
-        else:
-            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
+            # self.logger.info(f"state get_best_discrete_theta: {state}")
+            # self.logger.info(f"Best theta: {theta}")
+        # else:
+        #     self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
 
         if is_reachable:
             ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
@@ -639,13 +638,11 @@ class PollenKdlKinematics(LifecycleNode):
         """This function will always guarantee that the joint takes the shortest path to the new position.
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
-        self.logger.warning(f"Joints: {new_joints}")
-
         for i in range(len(new_joints)):
-            if i == 0:
-                self.logger.warning(
-                    f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}"
-                )
+            # if i == 0:
+            #     self.logger.warning(
+            #         f"Joint 6: [{new_joints[i]}, {prev_joints[i]}], angle_diff: {angle_diff(new_joints[i], prev_joints[i])}"
+            #     )
             diff = angle_diff(new_joints[i], prev_joints[i])
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
