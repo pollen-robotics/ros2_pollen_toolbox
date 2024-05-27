@@ -6,7 +6,9 @@ from typing import List
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
+from std_msgs.msg import Header
+
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -19,8 +21,10 @@ from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
+from visualization_msgs.msg import MarkerArray
 
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
+from pollen_grasping_utils.utils import get_grasp_marker
 
 from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
@@ -265,6 +269,8 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
+        self._marker_pub = self.create_publisher(MarkerArray, "markers_grasp_triplet", 10)
+
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
         self.logger.info("Configuring state has been called, going into inactive to release event trigger")
@@ -427,6 +433,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         # Checks if an interval exists that handles the wrist limits and the elbow limits
         is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable(goal_pose)
+
         if is_reachable:
             # Explores the interval to find a solution with no collision elbow-torso
             # is_reachable, theta, state = get_best_discrete_theta(
@@ -456,13 +463,31 @@ class PollenKdlKinematics(LifecycleNode):
 
         return ik_joints, is_reachable
 
-
     def inverse_kinematics_srv(
         self,
         request: GetInverseKinematics.Request,
         response: GetInverseKinematics.Response,
         name,
     ) -> GetInverseKinematics.Response:
+        # Publish goal pose marker to visualize in RViz
+        marker_array = MarkerArray()
+
+        grasp_markers = get_grasp_marker(
+            header=Header(
+                stamp=self.get_clock().now().to_msg(),
+                frame_id="torso",
+            ),
+            grasp_pose=request.pose,
+            marker_id=1,
+            tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
+            width=0.4,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
+            score=1.0,
+            color=[1.0, 0.0, 0.0, 1.0],
+            lifetime=15.0,
+        )
+        marker_array.markers.extend(grasp_markers.markers)
+        self._marker_pub.publish(marker_array)
+
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
         if "arm" in name:
