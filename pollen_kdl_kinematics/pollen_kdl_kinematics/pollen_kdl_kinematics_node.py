@@ -514,7 +514,7 @@ class PollenKdlKinematics(LifecycleNode):
                 frame_id="torso",
             ),
             grasp_pose=request.pose,
-            marker_id=1,
+            marker_id=np.random.randint(1,10000),
             tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
             width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
             score=1.0,
