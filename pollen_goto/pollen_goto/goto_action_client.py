@@ -390,11 +390,11 @@ async def all_at_once_demo(action_client, loop):
     logger.info(f"$$$$$$ EXAMPLE 4: complete IK calls")
 
     r_square = [
-        [7.53, -22.16, -30.57, -69.92, 14.82, 20.59, 18.28],
-        [-6.43, -34.65, -46.71, -109.05, 42.49, -28.29, 45.83],
-        [-22.53, 5.92, 2.71, -123.43, -31.76, -50.2, -30.13],
-        [2.66, 6.08, -1.9, -83.19, -12.97, 10.76, -3.67],
-        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [7.53, -32.16, -30.57, -69.92, 14.82, 20.59, 18.28],
+        [-6.43, -44.65, -46.71, -109.05, 42.49, -28.29, 45.83],
+        [-22.53, -5.92, 2.71, -123.43, -31.76, -50.2, -30.13],
+        [2.66, -6.08, -1.9, -83.19, -12.97, 10.76, -3.67],
+        [0.0, -20.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     ]
     neck_angles = [
         [0.2, 0.2, 0.2],
@@ -433,18 +433,19 @@ async def all_at_once_demo(action_client, loop):
         p_l[4] = -p_l[4]
         p_l[6] = -p_l[6]
 
+        movement_duration = 2.0
         my_task1 = loop.create_task(
-            action_client.send_goal("r_arm", r_joint_names, p_r, 2.0)
+            action_client.send_goal("r_arm", r_joint_names, p_r, movement_duration)
         )
         my_task2 = loop.create_task(
-            action_client.send_goal("l_arm", l_joint_names, p_l, 2.0)
+            action_client.send_goal("l_arm", l_joint_names, p_l, movement_duration)
         )
         my_task3 = loop.create_task(
             action_client.send_goal(
                 "neck",
                 ["neck_roll", "neck_pitch", "neck_yaw"],
                 neck_angles[index % len(neck_angles)],
-                0.5,
+                movement_duration,
             )
         )
 
