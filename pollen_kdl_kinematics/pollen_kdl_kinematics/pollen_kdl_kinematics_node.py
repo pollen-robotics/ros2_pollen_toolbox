@@ -320,7 +320,8 @@ class PollenKdlKinematics(LifecycleNode):
             self.previous_sol[name] = None
         self.last_call_t[name] = t
         d_theta_max = 0.01
-        interval_limit = [-4 * np.pi / 5, 0]
+        # interval_limit = [-4 * np.pi / 5, 0]
+        interval_limit = [-np.pi, np.pi]
 
         if name.startswith("r"):
             prefered_theta = self.prefered_theta
@@ -380,9 +381,9 @@ class PollenKdlKinematics(LifecycleNode):
             # )
             self.previous_theta[name] = theta
             ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
-            # self.logger.warning(
-            #    f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            # )
+            self.logger.warning(
+               f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
+            )
 
         else:
             self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
@@ -425,7 +426,7 @@ class PollenKdlKinematics(LifecycleNode):
         ik_joints_allowed = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
         if not np.allclose(ik_joints_allowed, ik_joints):
             self.logger.warning(
-                f"{name} Multiturn joint limit reached. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
+                f"{name} allow_multiturn had an impact. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
             )
         ik_joints = ik_joints_allowed
         # self.logger.info(f"{name} ik={ik_joints}")
@@ -476,23 +477,26 @@ class PollenKdlKinematics(LifecycleNode):
             # )
             # self.logger.info(f"state get_best_discrete_theta: {state}")
             # self.logger.info(f"Best theta: {theta}")
-        # else:
-        #     self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
+        else:
+            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
 
         if is_reachable:
+            self.logger.warning(
+               f"{name} Is reachable (discrete). Is truly reachable: {is_reachable}"
+            )
             ik_joints_raw, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             ik_joints = self.limit_orbita3d_joints_wrist(ik_joints_raw)
             # TODO enable this log with a throttle mechanism
-            # if not np.allclose(ik_joints, ik_joints_raw):
-            #     self.logger.warning(
-            #         f"{name} Wrist joint limit reached. \nRaw joints: {ik_joints_raw}\nLimited joints: {ik_joints}"
-            #     )
+            if not np.allclose(ik_joints, ik_joints_raw):
+                self.logger.warning(
+                    f"{name} Wrist joint limit reached. \nRaw joints: {ik_joints_raw}\nLimited joints: {ik_joints}"
+                )
 
             ik_joints_allowed = self.allow_multiturn(ik_joints, np.array(self.get_current_position(self.chain[name])), name)
-            # if not np.allclose(ik_joints_allowed, ik_joints):
-            #     self.logger.warning(
-            #         f"{name} Multiturn joint limit reached. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
-            #     )
+            if not np.allclose(ik_joints_allowed, ik_joints):
+                self.logger.warning(
+                    f"{name} allow_multiturn had an impact. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
+                )
             ik_joints = ik_joints_allowed
         else:
             ik_joints = np.array(self.get_current_position(self.chain[name]))
@@ -527,8 +531,8 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
         if "arm" in name:
-            sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
-            # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+            # sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
+            sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -550,7 +554,8 @@ class PollenKdlKinematics(LifecycleNode):
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
-            sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+            # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+            sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -674,6 +679,7 @@ class PollenKdlKinematics(LifecycleNode):
         """This function will always guarantee that the joint takes the shortest path to the new position.
         The practical effect is that it will allow the joint to rotate more than 2pi if it is the shortest path.
         """
+        new_joints = copy.deepcopy(new_joints)
         for i in range(len(new_joints)):
             # if i == 0:
             #     self.logger.warning(
@@ -706,6 +712,7 @@ class PollenKdlKinematics(LifecycleNode):
 
     def limit_orbita3d_joints_wrist(self, joints):
         """Casts the 3 orientations to ensure the orientation is reachable by an Orbita3D using the wrist conventions. i.e. casting into Orbita's cone."""
+        joints = copy.deepcopy(joints)
         wrist_joints = joints[4:7]
 
         wrist_joints = self.limit_orbita3d_joints(wrist_joints)
