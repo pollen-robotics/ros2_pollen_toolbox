@@ -31,6 +31,7 @@ from .kdl_kinematics import (
     inverse_kinematics,
     ros_pose_to_matrix,
 )
+from . import qp_utils as qu
 from .pose_averager import PoseAverager
 
 
@@ -60,6 +61,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.joint_state_ready = Event()
         self.wait_for_joint_state()
 
+        self.qpcontroller = {}
         self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
         self.target_sub, self.averaged_target_sub = {}, {}
@@ -189,6 +191,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
                 self.ik_solver[arm] = ik_solver
+                self.qpcontroller[arm] = qu.JointAngleQpController(urdfstr=self.urdf, prefix=prefix)
 
         # Kinematics for the head
         chain, fk_solver, ik_solver = generate_solver(
@@ -545,6 +548,13 @@ class PollenKdlKinematics(LifecycleNode):
         if "arm" in name:
             # sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
             sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+
+            ################################################
+            # QP CONTROLLER
+            # uncomment the 2 lines below
+            # q = np.array(self.get_current_position(self.chain[name]))
+            # sol = self.qpcontroller[name].solve(q, M)
+            ###############################################
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
