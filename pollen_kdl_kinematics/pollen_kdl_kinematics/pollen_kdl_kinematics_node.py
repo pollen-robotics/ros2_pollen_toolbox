@@ -10,20 +10,27 @@ from geometry_msgs.msg import Pose, PoseStamped
 from pollen_grasping_utils.utils import get_grasp_marker
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
-                       ReliabilityPolicy)
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (angle_diff, get_best_continuous_theta,
-                                       get_best_discrete_theta,
-                                       limit_theta_to_interval,
-                                       tend_to_prefered_theta)
+from reachy2_symbolic_ik.utils import (
+    angle_diff,
+    get_best_continuous_theta,
+    get_best_continuous_theta2,
+    get_best_discrete_theta,
+    limit_theta_to_interval,
+    tend_to_prefered_theta,
+)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, Header, String
 from visualization_msgs.msg import MarkerArray
 
-from .kdl_kinematics import (forward_kinematics, generate_solver,
-                             inverse_kinematics, ros_pose_to_matrix)
+from .kdl_kinematics import (
+    forward_kinematics,
+    generate_solver,
+    inverse_kinematics,
+    ros_pose_to_matrix,
+)
 from .pose_averager import PoseAverager
 
 
@@ -365,10 +372,19 @@ class PollenKdlKinematics(LifecycleNode):
             name
         ].is_reachable(goal_pose)
         if is_reachable:
-            is_reachable, theta, state = get_best_continuous_theta(
+            # is_reachable, theta, state = get_best_continuous_theta(
+            #     self.previous_theta[name],
+            #     interval,
+            #     theta_to_joints_func,
+            #     d_theta_max,
+            #     prefered_theta,
+            #     self.symbolic_ik_solver[name].arm,
+            # )
+            is_reachable, theta, state = get_best_continuous_theta2(
                 self.previous_theta[name],
                 interval,
                 theta_to_joints_func,
+                10,
                 d_theta_max,
                 prefered_theta,
                 self.symbolic_ik_solver[name].arm,
@@ -381,9 +397,7 @@ class PollenKdlKinematics(LifecycleNode):
             # )
             self.previous_theta[name] = theta
             ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
-            self.logger.warning(
-               f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}"
-            )
+            self.logger.warning(f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}")
 
         else:
             self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
@@ -481,9 +495,7 @@ class PollenKdlKinematics(LifecycleNode):
             self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
 
         if is_reachable:
-            self.logger.warning(
-               f"{name} Is reachable (discrete). Is truly reachable: {is_reachable}"
-            )
+            self.logger.warning(f"{name} Is reachable (discrete). Is truly reachable: {is_reachable}")
             ik_joints_raw, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
             ik_joints = self.limit_orbita3d_joints_wrist(ik_joints_raw)
             # TODO enable this log with a throttle mechanism
@@ -554,8 +566,8 @@ class PollenKdlKinematics(LifecycleNode):
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
-            # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
-            sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
+            sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+            # sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
