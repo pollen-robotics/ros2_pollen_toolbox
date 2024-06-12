@@ -593,7 +593,8 @@ class PollenKdlKinematics(LifecycleNode):
             # print('tip:{} frame_id:{}'.format(tip, frame_id))
             Mcur = rh.pin_FK(model, data, q, frame_id)
             # Mcur = pin.SE3(rh.kdlFrame_to_np(rh.kdl_FK(self.fk_solver[name], q)))
-            log = pin.log(Mcur.actInv(Mdes)).vector
+            iMd = Mcur.actInv(Mdes)
+            log = pin.log(iMd).vector
             # log[:3] = Mdes.translation - Mcur.translation
             # X0_pin, X1_pin = Mcur, Mdes
             # log[3:] = X0_pin.rotation @ pin.log(X0_pin.rotation.T @ X1_pin.rotation)
@@ -604,7 +605,7 @@ class PollenKdlKinematics(LifecycleNode):
             #                            reference_frame=pin.LOCAL)
             # Jac = pin.computeJointJacobian(model, data, q, joint_id)
             Jac = pin.computeFrameJacobian(model, data, q, frame_id,
-                                        reference_frame=pin.LOCAL)
+                                           reference_frame=pin.LOCAL)
             # Jac = pin.getFrameJacobian(model, data, frame_id,
             #                            reference_frame=pin.LOCAL)
             # Jac = pin.getFrameJacobian(model, data, frame_id,
@@ -640,29 +641,41 @@ class PollenKdlKinematics(LifecycleNode):
 
             q_reg = np.zeros_like(q)
             # q_reg= np.array([0, 0, -np.pi / 2, 0, 0, 0])
-            q_reg[1] = -np.pi/2
-            # q_reg[2] = -np.pi if name=='l_arm' else np.pi
+            q_reg[1] = -np.pi/2 if name=='r_arm' else np.pi/2
             # q_reg = np.ones_like(q)
 
             print('    sol: {}'.format(sol))
+            # Jac = np.dot(pin.Jlog6(iMd.inverse()), Jac)
             qd = rh.velqp(Jac, log, q, q_reg, T,
+                        linear_factor=5,
                         # linear_factor=20,
                         # linear_factor=50,
-                        w_reg=1e-3,
-                        # w_reg=100000,
+                        k_qreg=5,
+                        # w_reg=1e-5,
+                        # w_reg=1,
+                        w_reg=2,
+                        # w_reg=100000000,
                         q_old=self.q_old,
                         )
+            print('T: {}'.format(T))
+            print('q: {}'.format(q))
+            print('qd: {}'.format(qd))
             qpsol = q + qd*T
             print('qpsol x: {}'.format(qpsol))
-
-            transsol = q + rh.qd_from_Jpen(Jac, v=log/T,
-                                        alpha=1e-3,
-                                        )
-            print('transsol: {}'.format(transsol))
-
             sol = qpsol
-            # sol = transsol
             self.q_old = qpsol
+
+            ####################################################
+            ####################################################
+            # NOTE LEGACY J.T method IK
+            # transsol = q + rh.qd_from_Jpen(Jac, v=log/T,
+            #                             alpha=1e-3,
+            #                             )
+            # sol = transsol
+            # print('transsol: {}'.format(transsol))
+            ####################################################
+            ####################################################
+
 
         else:
             error, sol = inverse_kinematics(

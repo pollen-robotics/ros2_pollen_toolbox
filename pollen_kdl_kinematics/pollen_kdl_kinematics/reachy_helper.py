@@ -37,7 +37,7 @@ def pinSE3_to_np(M):
     temp[:3,3] = M.translation
     return temp
 
-def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
+def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=None):
     #  Quadratic Problem
     #  q => current arm joint angles
     # qd => joint angle velocities
@@ -48,12 +48,12 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
     if q_old is None:
         q_old = np.zeros_like(q)
 
-    g_q0 = -w_reg*2*(q_reg-q)# -w_reg*2*(q-q_old)/T
+    g_q0 = -w_reg*2*(k_qreg*(q_reg-q))# -w_reg*2*(q-q_old)/T
     g = -2*Jac.T@log / T + g_q0
 
     k = np.eye(6)
     k[:3,:] *= linear_factor
-    P = spa.csc_matrix(2*Jac.T@k@k@Jac) # + w_reg*spa.csc_matrix(np.eye(len(q)))
+    P = spa.csc_matrix(2*Jac.T@k@k@Jac) + w_reg*spa.csc_matrix(np.eye(len(q)))
     g = -2*Jac.T@k@log / T + g_q0
 
     eye = np.eye(len(q))
@@ -70,17 +70,17 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, w_reg=1e-5, q_old=None):
     # joint limits
     q_max =  np.inf*np.ones_like(q)
     q_min = -np.inf*np.ones_like(q)
-    q_max =   np.pi*np.ones_like(q)
-    q_min =  -np.pi*np.ones_like(q)
-    factor = 0.3
-    q_max =factor* np.pi*np.ones_like(q)
-    q_min =factor*-np.pi*np.ones_like(q)
+    # q_max =   np.pi*np.ones_like(q)
+    # q_min =  -np.pi*np.ones_like(q)
+    # factor = 0.3
+    # q_max =factor* np.pi*np.ones_like(q)
+    # q_min =factor*-np.pi*np.ones_like(q)
     # q_max = np.array([1.57079633, 0., 1.57079633, 0.1, 0.35, 0.35, 1.57])
     # q_min = np.array([-1.57079633, -1.57079633, -1.57079633, -2.25, -0.35, -0.35, -1.57])
 
 
     # enables joint angle limits
-    TT = T
+    TT = 2*T
     qp_A = spa.csc_matrix(np.vstack([eye, eye]))
     qd_max = np.hstack([qd_max, (q_max-q)/(TT)])
     qd_min = np.hstack([qd_min, (q_min-q)/(TT)])

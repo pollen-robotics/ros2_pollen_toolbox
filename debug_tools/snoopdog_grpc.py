@@ -2,10 +2,9 @@ import time
 
 import numpy as np
 from google.protobuf.wrappers_pb2 import FloatValue
+from reachy2_sdk import ReachySDK
 from reachy2_sdk_api.arm_pb2 import ArmCartesianGoal
 from reachy2_sdk_api.kinematics_pb2 import Matrix4x4
-
-from reachy2_sdk import ReachySDK
 
 reachy = ReachySDK(host="localhost")
 # reachy = ReachySDK(host="10.0.0.204")
@@ -20,7 +19,10 @@ reachy.turn_on()
 def goto(x: float, y: float, z: float, partid=1) -> None:
     goal = np.array(
         [
-            [0, 0, 1, x],
+            # [0, 0, 1, x],
+            # [0, 1, 0, y],
+            # [1, 0, 0, z],
+            [0, 0, -1, x],
             [0, 1, 0, y],
             [1, 0, 0, z],
             [0, 0, 0, 1],
@@ -49,8 +51,8 @@ radius = 0.2  # Circle radius
 fixed_x = .4  # Fixed x-coordinate
 center_y, center_z = 0, 0.1  # Center of the circle in y-z plane
 num_steps = 200  # Number of steps to complete the circle
-frequency = 50000  # Update frequency in Hz
-# frequency = 10  # Update frequency in Hz
+# frequency = 50000  # Update frequency in Hz
+frequency = 100  # Update frequency in Hz
 step = 0  # Current step
 circle_period = 3
 # with open(self.fifo_path, "w") as fifo:
