@@ -397,10 +397,10 @@ class PollenKdlKinematics(LifecycleNode):
             # )
             self.previous_theta[name] = theta
             ik_joints, elbow_position = theta_to_joints_func(theta, previous_joints=self.previous_sol[name])
-            self.logger.warning(f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}")
+            # self.logger.warning(f"{name} Is reachable. Is truly reachable: {is_reachable}. State: {state}")
 
         else:
-            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
+            # self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
             # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(goal_pose)
             if is_reachable:
@@ -438,10 +438,10 @@ class PollenKdlKinematics(LifecycleNode):
         if not np.allclose(ik_joints, ik_joints_raw):
             self.logger.warning(f"{name} Wrist joint limit reached. \nRaw joints: {ik_joints_raw}\nLimited joints: {ik_joints}")
         ik_joints_allowed = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
-        if not np.allclose(ik_joints_allowed, ik_joints):
-            self.logger.warning(
-                f"{name} allow_multiturn had an impact. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
-            )
+        # if not np.allclose(ik_joints_allowed, ik_joints):
+        #     self.logger.warning(
+        #         f"{name} allow_multiturn had an impact. \nRaw joints: {ik_joints}\nLimited joints: {ik_joints_allowed}"
+        #     )
         ik_joints = ik_joints_allowed
         # self.logger.info(f"{name} ik={ik_joints}")
         self.previous_sol[name] = copy.deepcopy(ik_joints)
@@ -701,13 +701,13 @@ class PollenKdlKinematics(LifecycleNode):
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
         indexes_that_can_multiturn = [0, 2, 6]
-        for index in indexes_that_can_multiturn:
-            if abs(new_joints[index]) > np.pi:
-                self.logger.warning(
-                    f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-                )
-                # TEMP forbidding multiturn
-                # new_joints[index] = np.sign(new_joints[index]) * np.pi
+        # for index in indexes_that_can_multiturn:
+        #     if abs(new_joints[index]) > np.pi:
+        #         self.logger.warning(
+        #             f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #         )
+        #         # TEMP forbidding multiturn
+        #         # new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
