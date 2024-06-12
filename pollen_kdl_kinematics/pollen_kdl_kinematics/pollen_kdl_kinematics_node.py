@@ -701,13 +701,13 @@ class PollenKdlKinematics(LifecycleNode):
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
         indexes_that_can_multiturn = [0, 2, 6]
-        # for index in indexes_that_can_multiturn:
-        #     if abs(new_joints[index]) > np.pi:
-        #         self.logger.warning(
-        #             f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-        #         )
-        #         # TEMP forbidding multiturn
-        #         # new_joints[index] = np.sign(new_joints[index]) * np.pi
+        for index in indexes_that_can_multiturn:
+            if abs(new_joints[index]) > np.pi:
+                self.logger.warning(
+                    f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+                )
+                # TEMP forbidding multiturn
+                # new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
