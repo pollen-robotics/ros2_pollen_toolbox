@@ -8,6 +8,7 @@ from reachy2_sdk_api.kinematics_pb2 import Matrix4x4
 from reachy2_sdk import ReachySDK
 
 reachy = ReachySDK(host="localhost")
+# reachy = ReachySDK(host="10.0.0.204")
 
 # reachy.r_gripper._gripper_stub.TurnOn(reachy.r_gripper.part_id)
 
@@ -39,12 +40,14 @@ def goto(x: float, y: float, z: float, partid=1) -> None:
     reachy.r_arm._arm_stub.SendArmCartesianGoal(target)
 
 
-goto(1, 1, 0)
+goto(.2, -0.5, -.4)
+goto(.2, 0.5, -.4, partid=2)
+time.sleep(3)
 
 print("coucou")
-radius = 0.5  # Circle radius
-fixed_x = 1  # Fixed x-coordinate
-center_y, center_z = 0, 0  # Center of the circle in y-z plane
+radius = 0.2  # Circle radius
+fixed_x = .4  # Fixed x-coordinate
+center_y, center_z = 0, 0.1  # Center of the circle in y-z plane
 num_steps = 200  # Number of steps to complete the circle
 frequency = 50000  # Update frequency in Hz
 # frequency = 10  # Update frequency in Hz
@@ -63,6 +66,6 @@ while True:
     z = center_z + radius * np.sin(angle)
 
     # Call the goto function with the constant x and calculated y, z coordinates
-    goto(fixed_x, y, z, partid=2)
-    goto(fixed_x, y, z, partid=1)
+    goto(fixed_x, y+.2, z, partid=2)
+    goto(fixed_x, y-.2, z, partid=1)
     time.sleep(1.0/frequency)
