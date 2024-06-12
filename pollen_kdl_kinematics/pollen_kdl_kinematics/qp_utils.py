@@ -1,9 +1,15 @@
+
 #!/usr/bin/env python
 
 import tempfile
 
 import numpy as np
-import osqp
+
+OSQP_FOUND=True
+try:
+    import osqp
+except ImportError as e:
+    OSQP_FOUND=False
 import pinocchio as pin
 import PyKDL as kdl
 import scipy.sparse as spa
@@ -200,3 +206,110 @@ def head_from_urdfstr(urdfstr):
     model = pin.buildModelFromXML(urdfstr)
     model, _ = model_data_from_joints(model, head_joints)
     return model
+
+
+class JointAngleQpController:
+    def __init__(self, urdfstr, prefix):
+        self.pinmodel = arm_from_urdfstr(urdfstr=urdfstr, arm=prefix)
+        self.q_old = None
+        self.prefix = prefix
+
+    def solve(self, q, M):
+
+        #####################################################
+        #####################################################
+        #####################################################
+        # TODO experimental QP SOLVER FOR ARMS
+
+        Mdes = pin.SE3(M)
+
+
+        ####################################################
+        # pinocchio
+        model = self.pinmodel
+        data = model.createData()
+
+
+        tip = self.prefix + '_arm_tip'
+        frame_id = model.getFrameId(tip)
+        # joint_id = model.getJointId(tip)
+        # print('tip:{} frame_id:{}'.format(tip, frame_id))
+        Mcur = pin_FK(model, data, q, frame_id)
+        # Mcur = pin.SE3(rh.kdlFrame_to_np(rh.kdl_FK(self.fk_solver[name], q)))
+        iMd = Mcur.actInv(Mdes)
+        log = pin.log(iMd).vector
+        # log[:3] = Mdes.translation - Mcur.translation
+        # X0_pin, X1_pin = Mcur, Mdes
+        # log[3:] = X0_pin.rotation @ pin.log(X0_pin.rotation.T @ X1_pin.rotation)
+
+        # Jac = pin.computeJointJacobians(model, data, q)
+        # Jac = pin.computeJointJacobian(model, data, q, joint_id)
+        # Jac = pin.getJointJacobian(model, data, joint_id,
+        #                            reference_frame=pin.LOCAL)
+        # Jac = pin.computeJointJacobian(model, data, q, joint_id)
+        Jac = pin.computeFrameJacobian(model, data, q, frame_id,
+                                        reference_frame=pin.LOCAL)
+        # Jac = pin.getFrameJacobian(model, data, frame_id,
+        #                            reference_frame=pin.LOCAL)
+        # Jac = pin.getFrameJacobian(model, data, frame_id,
+        #                            reference_frame=pin.LOCAL_WORLD_ALIGNED)
+        ####################################################
+        # Jac = pin.computeFrameJacobian(model, data, q, frame_id,
+        #                                reference_frame=pin.LOCAL_WORLD_ALIGNED)
+        ####################################################
+        # kdl
+        # Jac = rh.kdl_jacobian(self.jac_solver[name], q)
+        # Mcur = rh.kdl_FK(self.fk_solver[name], q)
+        # log = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
+        # log2 = rh.kdldiff_np(Mcur=Mcur, Mdes=M)
+        # log[3:] = log2[3:]
+        # log = log2
+        ####################################################
+        # warn('msg.pose:{}'.format(msg.pose))
+
+
+        # Mcur_pin = rh.pin_FK(model, data, q, frame_id)
+        # Mcur_kdl = pin.SE3(rh.kdlFrame_to_np(rh.kdl_FK(self.fk_solver[name], q)))
+        # err = np.linalg.norm(pin.log(Mcur_pin.actInv(Mcur_kdl)).vector)
+        # if err > 1e-3:
+        #     warn('WATTA FU GOIN ON')
+        #     warn('Mcur_pin:{} \nMcur_kdl:{}'.format(Mcur_pin, Mcur_kdl))
+        #     warn('err:{}'.format(err))
+
+        T = 1/100 # [Hz]
+
+        ####################################################
+        ####################################################
+        if not OSQP_FOUND:
+        # NOTE LEGACY J.T method IK in case no qp solver found
+            transsol = q + qd_from_Jpen(Jac, v=log/T,
+                                        alpha=1e-3)
+            sol = transsol
+            return sol
+        # print('transsol: {}'.format(transsol))
+        ####################################################
+
+
+
+        q_reg = np.zeros_like(q)
+        # q_reg= np.array([0, 0, -np.pi / 2, 0, 0, 0])
+        q_reg[1] = -np.pi/2 if self.prefix=='r' else np.pi/2
+        # q_reg = np.ones_like(q)
+
+        # Jac = np.dot(pin.Jlog6(iMd.inverse()), Jac)
+        qd = velqp(Jac, log, q, q_reg, T,
+                    linear_factor=5,
+                    # linear_factor=20,
+                    # linear_factor=50,
+                    k_qreg=5,
+                    # w_reg=1e-5,
+                    # w_reg=1,
+                    w_reg=2,
+                    # w_reg=100000000,
+                    q_old=self.q_old,
+                    )
+        qpsol = q + qd*T
+        sol = qpsol
+        self.q_old = qpsol
+
+        return sol
