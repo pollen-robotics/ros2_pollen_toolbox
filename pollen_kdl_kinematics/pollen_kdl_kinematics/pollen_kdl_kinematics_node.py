@@ -31,7 +31,8 @@ from .kdl_kinematics import (
     inverse_kinematics,
     ros_pose_to_matrix,
 )
-from . import qp_utils as qu
+
+# from . import qp_utils as qu
 from .pose_averager import PoseAverager
 
 
@@ -546,8 +547,8 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
         if "arm" in name:
-            # sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
-            sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
+            sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
+            # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
 
             ################################################
             # QP CONTROLLER
@@ -578,6 +579,13 @@ class PollenKdlKinematics(LifecycleNode):
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
             # sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
+
+            ################################################
+            # QP CONTROLLER
+            # uncomment the 2 lines below
+            # q = np.array(self.get_current_position(self.chain[name]))
+            # sol = self.qpcontroller[name].solve(q, M)
+            ###############################################
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
