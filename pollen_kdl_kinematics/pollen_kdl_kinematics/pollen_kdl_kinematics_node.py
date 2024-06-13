@@ -19,6 +19,7 @@ from reachy2_symbolic_ik.utils import (
     get_best_discrete_theta,
     limit_theta_to_interval,
     tend_to_prefered_theta,
+    get_best_theta_to_current_joints,
 )
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -32,7 +33,7 @@ from .kdl_kinematics import (
     ros_pose_to_matrix,
 )
 
-# from . import qp_utils as qu
+# from . import qp_utils as qu # to install: pip install pin osqp
 from .pose_averager import PoseAverager
 
 
@@ -71,7 +72,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.symbolic_ik_solver = {}
         self.last_call_t = {}
-        self.call_timeout = 0.5
+        self.call_timeout = 0.2
 
         # High frequency QoS profile
         high_freq_qos_profile = QoSProfile(
@@ -192,7 +193,9 @@ class PollenKdlKinematics(LifecycleNode):
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
                 self.ik_solver[arm] = ik_solver
-                self.qpcontroller[arm] = qu.JointAngleQpController(urdfstr=self.urdf, prefix=prefix)
+                # self.qpcontroller[arm] = qu.JointAngleQpController(
+                #     urdfstr=self.urdf, prefix=prefix
+                # )
 
         # Kinematics for the head
         chain, fk_solver, ik_solver = generate_solver(
@@ -349,13 +352,37 @@ class PollenKdlKinematics(LifecycleNode):
             # if the arm moved since last call, we need to update the previous_sol
             # self.previous_sol[name] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
             # TODO : Get a current position that take the multiturn into consideration
-            # Otherwise, when there is no call for more than 0.5s, the joints will be cast between -pi and pi
+            # Otherwise, when there is no call for more than call_timeouts, the joints will be cast between -pi and pi
             # -> If you pause a rosbag during a multiturn and restart it, the previous_sol will be wrong by 2pi
-            self.previous_sol[name] = np.array(self.get_current_position(self.chain[name]))
-            # self.logger.warning(
-            #     f"{name} previous_sol is None. Setting it to current position : {self.previous_sol[name]}"
-            # )
-            # valeur actuelle des joints
+            current_joints = np.array(self.get_current_position(self.chain[name]))
+            self.previous_sol[name] = current_joints
+
+            # Finding the current pose and estimating the best theta to match that pose
+            error, current_pose = forward_kinematics(
+                self.fk_solver[name],
+                current_joints,
+                self.chain[name].getNrOfJoints(),
+            )
+
+            current_goal_position, current_goal_orientation = get_euler_from_homogeneous_matrix(M)
+            current_pose_tuple = np.array([current_goal_position, current_goal_orientation])
+            t0 = time.time()
+            is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(
+                current_pose_tuple
+            )
+
+            best_prev_theta, state = get_best_theta_to_current_joints(
+                theta_to_joints_func,
+                20,
+                current_joints,
+                self.symbolic_ik_solver[name].arm,
+            )
+            t1 = time.time()
+            self.previous_theta[name] = best_prev_theta
+            self.logger.warning(f"{name} previous_sol is None. Setting it to current position : {self.previous_sol[name]}")
+            self.logger.warning(
+                f"{name} estimating previous_theta from current position. Best previous theta: {self.previous_theta[name]}, state: {state}. Computation time: {(t1-t0)*1000:.2f}ms"
+            )
 
         # self.logger.warning(
         #     f"{name} prefered_theta: {prefered_theta}, previous_theta: {self.previous_theta[name]}"
@@ -439,8 +466,10 @@ class PollenKdlKinematics(LifecycleNode):
         # self.logger.warning(f"name {name} previous_sol: {self.previous_sol[name]}")
         ik_joints_raw = ik_joints
         ik_joints = self.limit_orbita3d_joints_wrist(ik_joints_raw)
-        if not np.allclose(ik_joints, ik_joints_raw):
-            self.logger.warning(f"{name} Wrist joint limit reached. \nRaw joints: {ik_joints_raw}\nLimited joints: {ik_joints}")
+        # if not np.allclose(ik_joints, ik_joints_raw):
+        #     self.logger.warning(
+        #         f"{name} Wrist joint limit reached. \nRaw joints: {ik_joints_raw}\nLimited joints: {ik_joints}"
+        #     )
         ik_joints_allowed = self.allow_multiturn(ik_joints, self.previous_sol[name], name)
         # if not np.allclose(ik_joints_allowed, ik_joints):
         #     self.logger.warning(
@@ -719,13 +748,13 @@ class PollenKdlKinematics(LifecycleNode):
             new_joints[i] = prev_joints[i] + diff
         # Temp : showing a warning if a multiturn is detected. TODO do better. This info is critical and should be saved dyamically on disk.
         indexes_that_can_multiturn = [0, 2, 6]
-        for index in indexes_that_can_multiturn:
-            if abs(new_joints[index]) > np.pi:
-                self.logger.warning(
-                    f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
-                )
-                # TEMP forbidding multiturn
-                # new_joints[index] = np.sign(new_joints[index]) * np.pi
+        # for index in indexes_that_can_multiturn:
+        #     if abs(new_joints[index]) > np.pi:
+        #         self.logger.warning(
+        #             f" {name} Multiturn detected on joint {index} with value: {new_joints[index]} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+        #         )
+        #         # TEMP forbidding multiturn
+        #         # new_joints[index] = np.sign(new_joints[index]) * np.pi
         return new_joints
 
     def limit_orbita3d_joints(self, joints):
