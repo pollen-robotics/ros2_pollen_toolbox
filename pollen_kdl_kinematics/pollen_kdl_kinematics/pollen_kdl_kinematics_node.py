@@ -579,12 +579,6 @@ class PollenKdlKinematics(LifecycleNode):
             sol, is_reachable = self.symbolic_inverse_kinematics_discrete(name, M)
             # sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
 
-            ################################################
-            # QP CONTROLLER
-            # uncomment the 2 lines below
-            # q = np.array(self.get_current_position(self.chain[name]))
-            # sol = self.qpcontroller[name].solve(q, M)
-            ###############################################
         else:
             error, sol = inverse_kinematics(
                 self.ik_solver[name],
@@ -614,6 +608,8 @@ class PollenKdlKinematics(LifecycleNode):
             # uncomment the 2 lines below
             # q = np.array(self.get_current_position(self.chain[name]))
             # sol = self.qpcontroller[name].solve(q, M)
+            # err_lin, err_ang = qu.pose_err_norms(self.qpcontroller[name].fk(sol), Mdes=M)
+            # self.logger.info(f"sol err  lin: {err_lin:.3f} |  ang: {err_ang:.3f}")
             ###############################################
         else:
             error, sol = inverse_kinematics(

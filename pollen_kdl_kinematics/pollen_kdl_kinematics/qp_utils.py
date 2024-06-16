@@ -43,7 +43,13 @@ def pinSE3_to_np(M):
     temp[:3,3] = M.translation
     return temp
 
-def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=None):
+class LinConstraints:
+    def __init__(self, A, Amin, Amax):
+        self.A = A
+        self.min = Amin
+        self.max = Amax
+
+def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=None, linear_constraints=None):
     #  Quadratic Problem
     #  q => current arm joint angles
     # qd => joint angle velocities
@@ -66,7 +72,7 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=N
     qp_A = spa.csc_matrix(np.vstack([eye]))
 
     # QDMAX = 200
-    QDMAX = 5
+    QDMAX = 10
     # QDMAX = 2
     # QDMAX = .5
     qd_max =  QDMAX*np.ones_like(q)
@@ -81,20 +87,28 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=N
     # factor = 0.3
     # q_max =factor* np.pi*np.ones_like(q)
     # q_min =factor*-np.pi*np.ones_like(q)
-    # q_max = np.array([1.57079633, 0., 1.57079633, 0.1, 0.35, 0.35, 1.57])
-    # q_min = np.array([-1.57079633, -1.57079633, -1.57079633, -2.25, -0.35, -0.35, -1.57])
+    # factor = 0.6
+    # q_max[:-3] = factor * q_max[:-3]
+    # q_min[:-3] = factor * q_min[:-3]
+    q_max = np.array([1.57079633, 1.57079633, 1.57079633, 0.1, 0.35, 0.35, 1.57])
+    q_min = np.array([-1.57079633, -1.57079633, -1.57079633, -2.25, -0.35, -0.35, -1.57])
 
 
     # enables joint angle limits
     TT = 2*T
-    qp_A = spa.csc_matrix(np.vstack([eye, eye]))
+    qp_A = np.vstack([eye, eye])
     qd_max = np.hstack([qd_max, (q_max-q)/(TT)])
     qd_min = np.hstack([qd_min, (q_min-q)/(TT)])
+
+    if linear_constraints is not None:
+        qp_A = np.vstack([qp_A, linear_constraints.A])
+        qd_max = np.hstack([qd_max, linear_constraints.max])
+        qd_min = np.hstack([qd_min, linear_constraints.min])
 
     qp_l, qp_u = qd_min, qd_max
 
     qp = osqp.OSQP()
-    qp.setup(P=P, q=g, A=qp_A, l=qp_l, u=qp_u, verbose=False)
+    qp.setup(P=P, q=g, A=spa.csc_matrix(qp_A), l=qp_l, u=qp_u, verbose=False)
     results = qp.solve()
     print('status: {}'.format(results.info.status))
     return results.x
@@ -207,12 +221,28 @@ def head_from_urdfstr(urdfstr):
     model, _ = model_data_from_joints(model, head_joints)
     return model
 
+def pose_err(M, Mdes):
+    Mdes = pin.SE3(M)
+    return np.hstack([*(Mdes.translation-M.translation),
+                        *pin.log(M.rotation.T@M.rotation)])
+
+def pose_err_norms(M, Mdes):
+    err = pose_err(M, Mdes)
+    return np.linalg.norm(err[:3]), np.linalg.norm(err[3:])
 
 class JointAngleQpController:
+
     def __init__(self, urdfstr, prefix):
         self.pinmodel = arm_from_urdfstr(urdfstr=urdfstr, arm=prefix)
         self.q_old = None
         self.prefix = prefix
+
+    def fk(self, q):
+        model = self.pinmodel
+        data = model.createData()
+        tip = self.prefix + '_arm_tip'
+        frame_id = model.getFrameId(tip)
+        return pin_FK(model, data, q, frame_id)
 
     def solve(self, q, M):
 
@@ -276,12 +306,11 @@ class JointAngleQpController:
         #     warn('Mcur_pin:{} \nMcur_kdl:{}'.format(Mcur_pin, Mcur_kdl))
         #     warn('err:{}'.format(err))
 
-        T = 1/100 # [Hz]
+        T = 1/120 # [Hz]
 
         ####################################################
-        ####################################################
-        if not OSQP_FOUND:
         # NOTE LEGACY J.T method IK in case no qp solver found
+        if not OSQP_FOUND:
             transsol = q + qd_from_Jpen(Jac, v=log/T,
                                         alpha=1e-3)
             sol = transsol
@@ -290,23 +319,52 @@ class JointAngleQpController:
         ####################################################
 
 
-
+        ####################################################
+        # regularization pose
         q_reg = np.zeros_like(q)
         # q_reg= np.array([0, 0, -np.pi / 2, 0, 0, 0])
+        val = np.pi/3
+        q_reg[0] = -val
         q_reg[1] = -np.pi/2 if self.prefix=='r' else np.pi/2
         # q_reg = np.ones_like(q)
+        ####################################################
+
+
+
+        ####################################################
+        # extra constraints for anti self collision
+        # tip = self.prefix + '_elbow_arm_joint'
+        tip = self.prefix + '_elbow_yaw'
+        frame_id = model.getFrameId(tip)
+        yJacElbow = pin.computeFrameJacobian(model, data, q, frame_id,
+                                             reference_frame=pin.LOCAL_WORLD_ALIGNED)[1, :]
+        val = -0.2
+        yplane = val if self.prefix=='r' else -val
+        dydt = yplane - M[1,3]
+        Alin = T*yJacElbow
+
+        # print(f"Alin: {Alin}")
+        # print(f"dydt:{dydt:.2f}, yplane:{yplane:.2f},  {self.prefix}_.y:{M[1,3]:.2f}")
+        ymax = dydt
+        ymin = -np.inf if dydt <0 else np.inf
+        Amin = np.minimum(ymin, ymax)
+        Amax = np.maximum(ymin, ymax)
+        linear_constraints = LinConstraints(A=Alin, Amin=Amin, Amax=Amax)
+        ####################################################
 
         # Jac = np.dot(pin.Jlog6(iMd.inverse()), Jac)
         qd = velqp(Jac, log, q, q_reg, T,
-                    linear_factor=5,
+                    # linear_factor=5,
+                    linear_factor=10,
                     # linear_factor=20,
                     # linear_factor=50,
-                    k_qreg=5,
-                    # w_reg=1e-5,
+                    k_qreg=10,
+                    w_reg=1e-1,
                     # w_reg=1,
-                    w_reg=2,
+                    # w_reg=2,
                     # w_reg=100000000,
                     q_old=self.q_old,
+                    # linear_constraints=linear_constraints,
                     )
         qpsol = q + qd*T
         sol = qpsol
