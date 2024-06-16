@@ -72,8 +72,9 @@ def velqp(Jac, log, q, q_reg, T, linear_factor=1, k_qreg=10, w_reg=1e-5, q_old=N
     qp_A = spa.csc_matrix(np.vstack([eye]))
 
     # QDMAX = 200
-    QDMAX = 10
     # QDMAX = 2
+    QDMAX = 5
+    # QDMAX = 10
     # QDMAX = .5
     qd_max =  QDMAX*np.ones_like(q)
     qd_min = -QDMAX*np.ones_like(q)
@@ -237,10 +238,11 @@ class JointAngleQpController:
         self.q_old = None
         self.prefix = prefix
 
-    def fk(self, q):
+    def fk(self, q, tip=''):
         model = self.pinmodel
         data = model.createData()
-        tip = self.prefix + '_arm_tip'
+        if not tip:
+            tip = self.prefix + '_arm_tip'
         frame_id = model.getFrameId(tip)
         return pin_FK(model, data, q, frame_id)
 
@@ -338,15 +340,18 @@ class JointAngleQpController:
         frame_id = model.getFrameId(tip)
         yJacElbow = pin.computeFrameJacobian(model, data, q, frame_id,
                                              reference_frame=pin.LOCAL_WORLD_ALIGNED)[1, :]
-        val = -0.2
+        val = -0.22
         yplane = val if self.prefix=='r' else -val
-        dydt = yplane - M[1,3]
+        val = -np.inf
+        ymin = val if self.prefix=='r' else -val
+        Melbow = self.fk(q, tip=tip)
+        yelbow = Melbow.translation[1]
+        dy = yplane - yelbow
         Alin = T*yJacElbow
 
-        # print(f"Alin: {Alin}")
-        # print(f"dydt:{dydt:.2f}, yplane:{yplane:.2f},  {self.prefix}_.y:{M[1,3]:.2f}")
-        ymax = dydt
-        ymin = -np.inf if dydt <0 else np.inf
+        print(f"Alin: {Alin}")
+        print(f"dy:{dy:.2f}, yplane:{yplane:.2f},  {self.prefix}_.y:{yelbow:.2f}")
+        ymax = dy
         Amin = np.minimum(ymin, ymax)
         Amax = np.maximum(ymin, ymax)
         linear_constraints = LinConstraints(A=Alin, Amin=Amin, Amax=Amax)
@@ -355,7 +360,8 @@ class JointAngleQpController:
         # Jac = np.dot(pin.Jlog6(iMd.inverse()), Jac)
         qd = velqp(Jac, log, q, q_reg, T,
                     # linear_factor=5,
-                    linear_factor=10,
+                    # linear_factor=10,
+                    linear_factor=20,
                     # linear_factor=20,
                     # linear_factor=50,
                     k_qreg=10,
@@ -364,7 +370,7 @@ class JointAngleQpController:
                     # w_reg=2,
                     # w_reg=100000000,
                     q_old=self.q_old,
-                    # linear_constraints=linear_constraints,
+                    linear_constraints=linear_constraints,
                     )
         qpsol = q + qd*T
         sol = qpsol
