@@ -72,7 +72,7 @@ class PollenKdlKinematics(LifecycleNode):
             # Other QoS settings can be adjusted as needed
         )
 
-        # self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
+        self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
         # Symbolic IK inits.
         # A balanced position between elbow down and elbow at 90°
         # self.prefered_theta = -4 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
@@ -356,7 +356,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
             is_reachable = True
 
         response.success = is_reachable
@@ -384,7 +384,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
             # TODO: check error
 
         # Limit the speed of the joints if needed
@@ -425,7 +425,7 @@ class PollenKdlKinematics(LifecycleNode):
                 target_pose=M,
                 nb_joints=self.chain[name].getNrOfJoints(),
             )
-            sol = self.limit_orbita3d_joints(sol)
+            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
 
         # TODO: check error
         current_position = np.array(self.get_current_position(self.chain[name]))
