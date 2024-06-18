@@ -385,7 +385,7 @@ class PollenKdlKinematics(LifecycleNode):
             # )
 
         else:
-            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}")
+            self.logger.error(f"{name} Pose not reachable before even reaching theta selection. State: {state_reachable}", throttle_duration_sec=1)
             # self.logger.warning(f"{name} Pose not reachable but doing our best")
             is_reachable, interval, theta_to_joints_func = self.symbolic_ik_solver[name].is_reachable_no_limits(goal_pose)
             if is_reachable:
