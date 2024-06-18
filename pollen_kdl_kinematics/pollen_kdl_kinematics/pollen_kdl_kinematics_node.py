@@ -26,6 +26,20 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
+import time
+class Timer:
+    def __init__(self, name, logger, node):
+        self.name = name
+        self.logger = logger
+        self.node = node
+        self.tic()
+    def tic(self):
+        self.start = time.time()
+        self.start_node = self.node.get_clock().now().nanoseconds/1e9
+    def toc(self):
+        self.logger.info(f"{self.name}: {time.time()-self.start:.6f}s")
+        self.logger.info(f"{self.name}: {self.node.get_clock().now().nanoseconds/1e9-self.start_node:.6f}s (node)")
+
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
@@ -505,6 +519,10 @@ class PollenKdlKinematics(LifecycleNode):
         response: GetInverseKinematics.Response,
         name,
     ) -> GetInverseKinematics.Response:
+
+        a = Timer(f"pollen_kdl_kin.inverse_kinematics_srv({name})", self.logger, self)
+        a.tic()
+
         # Publish goal pose marker to visualize in RViz
         marker_array = MarkerArray()
 
@@ -545,6 +563,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         # self.logger.info(f"{sol} (KDL solution)")
 
+        a.toc()
         return response
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
