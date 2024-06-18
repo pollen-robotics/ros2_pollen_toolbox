@@ -17,13 +17,24 @@ from std_msgs.msg import Float64MultiArray, String
 from .kdl_kinematics import forward_kinematics, generate_solver, inverse_kinematics, ros_pose_to_matrix
 from .pose_averager import PoseAverager
 
+from time import time
+class Timer:
+    def __init__(self, name, logger, node):
+        self.name = name
+        self.logger = logger
+        self.start = time.now()
+        self.start_node = node.get_clock().now()
+        self.node = node
+    def toc():
+        self.logger.info(f"{self.name}: {time.now()-self.start:.3f}")
+        self.logger.info(f"{self.name}: {self.node.get_clock().now()-self.start_node:.3f} (node)")
+
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
     rotation_matrix = homogeneous_matrix[:3, :3]
     euler_angles = Rotation.from_matrix(rotation_matrix).as_euler("xyz", degrees=degrees)
     return position, euler_angles
-
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
@@ -371,6 +382,7 @@ class PollenKdlKinematics(LifecycleNode):
         response: GetInverseKinematics.Response,
         name,
     ) -> GetInverseKinematics.Response:
+        a = Timer(f"inverse_kinematics_srv({name})", self.logger, self)
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
         if "arm" in name:
@@ -390,6 +402,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         # self.logger.info(f"{sol} (KDL solution)")
 
+        a.toc()
         return response
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
