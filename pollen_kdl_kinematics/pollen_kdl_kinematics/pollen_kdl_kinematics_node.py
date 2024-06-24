@@ -15,12 +15,14 @@ from reachy2_symbolic_ik.control_ik import ControlIK
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (allow_multiturn,
                                        get_best_continuous_theta,
+                                       get_best_continuous_theta2,
                                        get_best_discrete_theta,
                                        get_euler_from_homogeneous_matrix,
                                        limit_orbita3d_joints,
                                        limit_orbita3d_joints_wrist,
                                        limit_theta_to_interval,
-                                       tend_to_prefered_theta)
+                                       tend_to_prefered_theta,
+                                       get_best_theta_to_current_joints,)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, Header, String
@@ -57,12 +59,6 @@ class PollenKdlKinematics(LifecycleNode):
         self.target_sub, self.averaged_target_sub = {}, {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
-
-        # self.symbolic_ik_solver = {}
-        # self.last_call_t = {}
-        # self.call_timeout = 0.5
-
-        self.control_ik = ControlIK(logger=self.logger)
 
         # High frequency QoS profile
         high_freq_qos_profile = QoSProfile(
@@ -267,6 +263,26 @@ class PollenKdlKinematics(LifecycleNode):
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
 
+        current_joints_r = self.get_current_position(self.chain["r_arm"])
+        current_joints_l = self.get_current_position(self.chain["l_arm"])
+        current_joints = [current_joints_r, current_joints_l]
+        error, current_pose_r = forward_kinematics(
+                self.fk_solver["r_arm"],
+                current_joints_r,
+                self.chain["r_arm"].getNrOfJoints(),
+            )
+        error, current_pose_l = forward_kinematics(
+                self.fk_solver["l_arm"],
+                current_joints_l,
+                self.chain["l_arm"].getNrOfJoints(),
+            )
+        current_pose = [current_pose_r, current_pose_l]
+        self.control_ik = ControlIK(
+            logger=self.logger,
+            current_joints=current_joints,
+            current_pose=current_pose,
+        )
+
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
@@ -339,13 +355,24 @@ class PollenKdlKinematics(LifecycleNode):
 
         M = ros_pose_to_matrix(request.pose)
         q0 = request.q0.position
+
+        current_joints = self.get_current_position(self.chain[name])
+        error, current_pose = forward_kinematics(
+            self.fk_solver[name],
+            current_joints,
+            self.chain[name].getNrOfJoints(),
+        )
+        current_pose = np.array(current_pose)
+        # self.logger.info(f"Current pose: {current_pose}")
+
         if "arm" in name:
             sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
                 name,
                 M,
                 "discrete",
-                current_position=self.get_current_position(self.chain[name]),
-                interval_limit=[-np.pi, np.pi]
+                current_joints=current_joints,
+                interval_limit=[-np.pi, np.pi],
+                current_pose=current_pose
             )
             # # self.logger.info(M)
             # self.logger.info(f"solution {sol} {is_reachable}")
@@ -370,12 +397,19 @@ class PollenKdlKinematics(LifecycleNode):
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
+            current_joints = self.get_current_position(self.chain[name])
+            error, current_pose = forward_kinematics(
+                self.fk_solver[name],
+                current_joints,
+                self.chain[name].getNrOfJoints(),
+            )
             sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
                 name,
                 M,
                 "continuous",
-                current_position=self.get_current_position(self.chain[name]),
-                interval_limit=[-4 * np.pi / 5, 0]
+                current_joints=current_joints,
+                interval_limit=[-4 * np.pi / 5, 0],
+                current_pose=current_pose
             )
         else:
             error, sol = inverse_kinematics(
@@ -411,12 +445,19 @@ class PollenKdlKinematics(LifecycleNode):
 
         M = ros_pose_to_matrix(avg_pose)
         if "arm" in name:
+            current_joints = self.get_current_position(self.chain[name])
+            error, current_pose = forward_kinematics(
+                self.fk_solver[name],
+                current_joints,
+                self.chain[name].getNrOfJoints(),
+            )
             sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
                 name,
                 M,
                 "continuous",
-                current_position=self.get_current_position(self.chain[name]),
-                interval_limit=[-4 * np.pi / 5, 0]
+                current_joints=current_joints,
+                interval_limit=[-4 * np.pi / 5, 0],
+                current_pose=current_pose
             )
         else:
             error, sol = inverse_kinematics(
