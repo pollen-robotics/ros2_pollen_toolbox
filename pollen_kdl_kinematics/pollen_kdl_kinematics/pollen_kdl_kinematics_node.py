@@ -27,6 +27,7 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
 from .pose_averager import PoseAverager
 
 import time
+
 class Timer:
     def __init__(self, name, logger, node):
         self.name = name
@@ -34,12 +35,17 @@ class Timer:
         self.node = node
         self.tic()
     def tic(self):
-        self.start = time.time()
+        self.start = time.time_ns()/1e9
         self.start_node = self.node.get_clock().now().nanoseconds/1e9
-    def toc(self):
-        self.logger.info(f"{self.name}: {(time.time()-self.start)*1000:.3f}ms")
-        self.logger.info(f"{self.name}: {(self.node.get_clock().now().nanoseconds/1e9-self.start_node)*1000:.3f}ms (node)")
 
+    def toc(self):
+        end = time.time_ns()/1e9
+        end_node = self.node.get_clock().now().nanoseconds/1e9
+        start_print = time.time()
+        print(f"{self.name}: {(end-self.start)*1000:.3f}ms")
+        # self.logger.info(f"{self.name}: {(end_node-self.start_node)*1000:.3f}ms (node)")
+        print(f"{self.name}.print_time:{(time.time()-start_print)*1000:.3f}ms")
+        # self.logger.info(f"{self.name}: {(end_node/1e9-self.start_node)*1000:.3f}ms (node)")
 
 def get_euler_from_homogeneous_matrix(homogeneous_matrix, degrees: bool = False):
     position = homogeneous_matrix[:3, 3]
@@ -567,6 +573,10 @@ class PollenKdlKinematics(LifecycleNode):
         return response
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
+        start = time.time_ns()
+        msgtime = rclpy.time.Time.from_msg(msg.header.stamp).nanoseconds
+        self.logger.info(f"on_target_pose: {(start-msgtime)/(1e6):.3f}ms")
+
         M = ros_pose_to_matrix(msg.pose)
         if "arm" in name:
             sol, is_reachable = self.symbolic_inverse_kinematics_continuous(name, M)
