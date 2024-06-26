@@ -8,6 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose, PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
+from pollen_msgs.msg import IKRequest
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -57,6 +58,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
         self.target_sub, self.averaged_target_sub = {}, {}
+        self.ik_target_sub = {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
 
@@ -133,6 +135,8 @@ class PollenKdlKinematics(LifecycleNode):
                     q0 = [0.0, np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
                 else:
                     q0 = [0.0, -np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
+
+                # Keeping both on _target_pose mechanisms for compatibility reasons
                 self.target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
                     topic=f"/{arm}/target_pose",
@@ -148,6 +152,19 @@ class PollenKdlKinematics(LifecycleNode):
                     ),
                 )
                 self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
+
+                #TODO créer ik_target_pose
+                self.ik_target_sub[arm] = self.create_subscription(
+                    msg_type=IKRequest,
+                    topic=f"/{arm}/ik_target_pose",
+                    qos_profile=high_freq_qos_profile,
+                    callback=partial(
+                        self.on_ik_target_pose,
+                        name=arm,
+                        forward_publisher=forward_position_pub,
+                    ),
+                )
+                self.logger.info(f'Adding subscription on "{self.ik_target_sub[arm].topic}"...')
 
                 self.averaged_target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
@@ -371,7 +388,7 @@ class PollenKdlKinematics(LifecycleNode):
                 M,
                 "discrete",
                 current_joints=current_joints,
-                interval_limit=[-np.pi, np.pi],
+                constrained_mode="unconstrained",
                 current_pose=current_pose
             )
             # # self.logger.info(M)
@@ -394,8 +411,50 @@ class PollenKdlKinematics(LifecycleNode):
 
         return response
 
+    def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
+        M = ros_pose_to_matrix(msg.pose.pose)
+        constrained_mode = msg.constrained_mode
+        continuous_mode = msg.continuous_mode
+        preferred_theta = msg.preferred_theta
+        d_theta_max = msg.d_theta_max
+        order_id = msg.order_id
+
+        # if constrained_mode == "low_elbow":
+        #     interval_limit = [-4 * np.pi / 5, 0]
+        # self.logger.info(f"Preferred theta: {preferred_theta}")
+        # self.logger.info(f"Continuous mode: {continuous_mode}")
+        # self.logger.info(f"Constrained mode: {constrained_mode}")
+        # self.logger.info(f"Order ID: {order_id}")
+        # self.logger.info(f"Max d_theta: {d_theta_max}")
+
+        if "arm" in name:
+            current_joints = self.get_current_position(self.chain[name])
+            error, current_pose = forward_kinematics(
+                self.fk_solver[name],
+                current_joints,
+                self.chain[name].getNrOfJoints(),
+            )
+
+            sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                name,
+                M,
+                continuous_mode,
+                current_joints=current_joints,
+                constrained_mode=constrained_mode,
+                current_pose=current_pose,
+                d_theta_max=d_theta_max,
+                preferred_theta=preferred_theta,
+            )
+        else:
+            self.logger.error("IK target pose should be only for the arms")
+
+        msg = Float64MultiArray()
+        msg.data = sol
+        forward_publisher.publish(msg)
+
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
+
         if "arm" in name:
             current_joints = self.get_current_position(self.chain[name])
             error, current_pose = forward_kinematics(
