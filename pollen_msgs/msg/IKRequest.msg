@@ -4,14 +4,12 @@ geometry_msgs/PoseStamped pose
 # Current options are "unconstrained" and "low_elbow"
 string constrained_mode
 
-# Value in [-pi, pi], angle of the elbow that the IK will try to obtain
-# Example : common values 
-# right arm : 
-# left arm : 
-
+# Value in [-pi, pi], angle of the elbow that the IK will try to obtain for the right arm
+# Common value : -4pi/6
 float64 preferred_theta
 
 # When in continuous mode this is the maximum amount of rads that the elbow can rotate on the reachability circle
+# Common value : 0.01
 float64 d_theta_max
 
 # Current options are "continuous" and "discrete"
