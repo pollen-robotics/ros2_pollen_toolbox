@@ -8,7 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose, PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
-from pollen_msgs.msg import IKRequest
+from pollen_msgs.msg import IKRequest, ReachabilityState
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -22,7 +22,6 @@ from reachy2_symbolic_ik.utils import (allow_multiturn,
                                        limit_orbita3d_joints,
                                        limit_orbita3d_joints_wrist,
                                        limit_theta_to_interval,
-                                       tend_to_prefered_theta,
                                        get_best_theta_to_current_joints,)
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
@@ -57,6 +56,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
+        self.reachability_pub = {}
         self.target_sub, self.averaged_target_sub = {}, {}
         self.ik_target_sub = {}
         self.averaged_pose = {}
@@ -131,6 +131,13 @@ class PollenKdlKinematics(LifecycleNode):
                     qos_profile=5,
                 )
 
+                # TODO dedoubler pour chacun des bras
+                self.reachability_pub[arm] = self.create_publisher(
+                    msg_type=ReachabilityState,
+                    topic=f"/{arm}_reachability_states",
+                    qos_profile=10,
+                )
+
                 if arm.startswith("l"):
                     q0 = [0.0, np.pi / 2, 0.0, -np.pi / 2, 0.0, 0.0, 0.0]
                 else:
@@ -153,7 +160,7 @@ class PollenKdlKinematics(LifecycleNode):
                 )
                 self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
-                #TODO créer ik_target_pose
+                # TODO créer ik_target_pose
                 self.ik_target_sub[arm] = self.create_subscription(
                     msg_type=IKRequest,
                     topic=f"/{arm}/ik_target_pose",
@@ -419,6 +426,12 @@ class PollenKdlKinematics(LifecycleNode):
         d_theta_max = msg.d_theta_max
         order_id = msg.order_id
 
+        if continuous_mode == "undefined":
+            continuous_mode = "continuous"
+
+        if constrained_mode == "undefined":
+            constrained_mode = "unconstrained"
+
         # if constrained_mode == "low_elbow":
         #     interval_limit = [-4 * np.pi / 5, 0]
         # self.logger.info(f"Preferred theta: {preferred_theta}")
@@ -451,6 +464,16 @@ class PollenKdlKinematics(LifecycleNode):
         msg = Float64MultiArray()
         msg.data = sol
         forward_publisher.publish(msg)
+        # TODO créer message,
+        # reachability_publisher
+        reachability_msg = ReachabilityState()
+        reachability_msg.header.stamp = self.get_clock().now().to_msg()
+        reachability_msg.header.frame_id = "torso"
+        reachability_msg.is_reachable = is_reachable
+        reachability_msg.state = state
+        reachability_msg.order_id = order_id
+        self.reachability_pub[name].publish(reachability_msg)
+
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         M = ros_pose_to_matrix(msg.pose)
