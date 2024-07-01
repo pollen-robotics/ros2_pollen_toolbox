@@ -490,7 +490,7 @@ class PollenKdlKinematics(LifecycleNode):
                 M,
                 "continuous",
                 current_joints=current_joints,
-                interval_limit=[-4 * np.pi / 5, 0],
+                constrained_mode="low_elbow",  # "unconstrained"
                 current_pose=current_pose
             )
         else:
