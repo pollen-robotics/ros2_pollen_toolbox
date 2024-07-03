@@ -26,6 +26,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GotoFeedback.msg"
   "msg/GotoRequest.msg"
   "msg/GotoResult.msg"
+  "msg/IKRequest.msg"
+  "msg/ReachabilityState.msg"
 
   "action/Goto.action"
 
