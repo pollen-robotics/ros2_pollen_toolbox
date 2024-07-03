@@ -131,7 +131,6 @@ class PollenKdlKinematics(LifecycleNode):
                     qos_profile=5,
                 )
 
-                # TODO dedoubler pour chacun des bras
                 self.reachability_pub[arm] = self.create_publisher(
                     msg_type=ReachabilityState,
                     topic=f"/{arm}_reachability_states",
@@ -160,7 +159,6 @@ class PollenKdlKinematics(LifecycleNode):
                 )
                 self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
 
-                # TODO créer ik_target_pose
                 self.ik_target_sub[arm] = self.create_subscription(
                     msg_type=IKRequest,
                     topic=f"/{arm}/ik_target_pose",
@@ -460,12 +458,11 @@ class PollenKdlKinematics(LifecycleNode):
             )
         else:
             self.logger.error("IK target pose should be only for the arms")
+            raise ValueError("IK target pose should be only for the arms")
 
         msg = Float64MultiArray()
         msg.data = sol
         forward_publisher.publish(msg)
-        # TODO créer message,
-        # reachability_publisher
         reachability_msg = ReachabilityState()
         reachability_msg.header.stamp = self.get_clock().now().to_msg()
         reachability_msg.header.frame_id = "torso"
