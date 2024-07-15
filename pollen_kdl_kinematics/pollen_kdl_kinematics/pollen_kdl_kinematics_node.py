@@ -34,6 +34,8 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
+from . import tracing_helper
+from opentelemetry import trace
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
@@ -41,6 +43,8 @@ class PollenKdlKinematics(LifecycleNode):
         self.logger = self.get_logger()
 
         self.urdf = self.retrieve_urdf()
+
+        self.tracer = tracing_helper.tracer("pollen_kdl_kinematics_node")
 
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
@@ -417,59 +421,69 @@ class PollenKdlKinematics(LifecycleNode):
         return response
 
     def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
-        M = ros_pose_to_matrix(msg.pose.pose)
-        constrained_mode = msg.constrained_mode
-        continuous_mode = msg.continuous_mode
-        preferred_theta = msg.preferred_theta
-        d_theta_max = msg.d_theta_max
-        order_id = msg.order_id
 
-        if continuous_mode == "undefined":
-            continuous_mode = "continuous"
+        self.logger.warn(f"on_target_pose.{name}: {msg.traceparent}")
 
-        if constrained_mode == "undefined":
-            constrained_mode = "unconstrained"
+        ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
-        # if constrained_mode == "low_elbow":
-        #     interval_limit = [-4 * np.pi / 5, 0]
-        # self.logger.info(f"Preferred theta: {preferred_theta}")
-        # self.logger.info(f"Continuous mode: {continuous_mode}")
-        # self.logger.info(f"Constrained mode: {constrained_mode}")
-        # self.logger.info(f"Order ID: {order_id}")
-        # self.logger.info(f"Max d_theta: {d_theta_max}")
+        with self.tracer.start_as_current_span(f"{name}::on_target_pose",
+                                                kind=trace.SpanKind.SERVER,
+                                                context=ctx) as span:
+            span.set_attributes({"rpc.system": "ros_topic", "server.address": "localhost"})
 
-        if "arm" in name:
-            current_joints = self.get_current_position(self.chain[name])
-            error, current_pose = forward_kinematics(
-                self.fk_solver[name],
-                current_joints,
-                self.chain[name].getNrOfJoints(),
-            )
+            M = ros_pose_to_matrix(msg.pose.pose)
+            constrained_mode = msg.constrained_mode
+            continuous_mode = msg.continuous_mode
+            preferred_theta = msg.preferred_theta
+            d_theta_max = msg.d_theta_max
+            order_id = msg.order_id
 
-            sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                name,
-                M,
-                continuous_mode,
-                current_joints=current_joints,
-                constrained_mode=constrained_mode,
-                current_pose=current_pose,
-                d_theta_max=d_theta_max,
-                preferred_theta=preferred_theta,
-            )
-        else:
-            self.logger.error("IK target pose should be only for the arms")
-            raise ValueError("IK target pose should be only for the arms")
+            if continuous_mode == "undefined":
+                continuous_mode = "continuous"
 
-        msg = Float64MultiArray()
-        msg.data = sol
-        forward_publisher.publish(msg)
-        reachability_msg = ReachabilityState()
-        reachability_msg.header.stamp = self.get_clock().now().to_msg()
-        reachability_msg.header.frame_id = "torso"
-        reachability_msg.is_reachable = is_reachable
-        reachability_msg.state = state
-        reachability_msg.order_id = order_id
-        self.reachability_pub[name].publish(reachability_msg)
+            if constrained_mode == "undefined":
+                constrained_mode = "unconstrained"
+
+            # if constrained_mode == "low_elbow":
+            #     interval_limit = [-4 * np.pi / 5, 0]
+            # self.logger.info(f"Preferred theta: {preferred_theta}")
+            # self.logger.info(f"Continuous mode: {continuous_mode}")
+            # self.logger.info(f"Constrained mode: {constrained_mode}")
+            # self.logger.info(f"Order ID: {order_id}")
+            # self.logger.info(f"Max d_theta: {d_theta_max}")
+
+            if "arm" in name:
+                current_joints = self.get_current_position(self.chain[name])
+                error, current_pose = forward_kinematics(
+                    self.fk_solver[name],
+                    current_joints,
+                    self.chain[name].getNrOfJoints(),
+                )
+
+                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                    name,
+                    M,
+                    continuous_mode,
+                    current_joints=current_joints,
+                    constrained_mode=constrained_mode,
+                    current_pose=current_pose,
+                    d_theta_max=d_theta_max,
+                    preferred_theta=preferred_theta,
+                )
+            else:
+                self.logger.error("IK target pose should be only for the arms")
+                raise ValueError("IK target pose should be only for the arms")
+
+            msg = Float64MultiArray()
+            msg.data = sol
+            forward_publisher.publish(msg)
+            reachability_msg = ReachabilityState()
+            reachability_msg.header.stamp = self.get_clock().now().to_msg()
+            reachability_msg.header.frame_id = "torso"
+            reachability_msg.is_reachable = is_reachable
+            reachability_msg.state = state
+            reachability_msg.order_id = order_id
+            self.reachability_pub[name].publish(reachability_msg)
 
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
