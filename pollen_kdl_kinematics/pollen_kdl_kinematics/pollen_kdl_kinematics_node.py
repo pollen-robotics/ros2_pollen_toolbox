@@ -443,7 +443,12 @@ class PollenKdlKinematics(LifecycleNode):
         with self.tracer.start_as_current_span(f"{name}::on_ik_target_pose_neck",
                                                 kind=trace.SpanKind.SERVER,
                                                 context=ctx) as span:
-            span.set_attributes({"rpc.system": "ros_topic", "server.address": "localhost"})
+
+            span.set_attributes({"rpc.system": "ros_topic",
+                                 "server.address": "localhost",
+                                 "q0": q0,
+                                 "M": M.astype(float).flatten().tolist(),
+                                 })
 
             error, sol = inverse_kinematics(
                     self.ik_solver[name],
@@ -452,6 +457,7 @@ class PollenKdlKinematics(LifecycleNode):
                     nb_joints=self.chain[name].getNrOfJoints(),
                 )
             sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+            span.set_attributes({"sol": sol, "error": error})
 
             msg = Float64MultiArray()
             msg.data = sol
@@ -461,12 +467,17 @@ class PollenKdlKinematics(LifecycleNode):
 
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
-        with self.tracer.start_as_current_span(f"{name}::on_target_pose",
+        with self.tracer.start_as_current_span(f"{name}::on_ik_target_pose",
                                                 kind=trace.SpanKind.SERVER,
                                                 context=ctx) as span:
-            span.set_attributes({"rpc.system": "ros_topic", "server.address": "localhost"})
-
             M = ros_pose_to_matrix(msg.pose.pose)
+
+            span.set_attributes({"rpc.system": "ros_topic",
+                                 "server.address": "localhost",
+                                 "M": M.astype(float).flatten().tolist(),
+                                 "control_ik.last_call_t1[name]": str(self.control_ik.last_call_t[name]),
+                                 })
+
             constrained_mode = msg.constrained_mode
             continuous_mode = msg.continuous_mode
             preferred_theta = msg.preferred_theta
@@ -505,6 +516,14 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max=d_theta_max,
                     preferred_theta=preferred_theta,
                 )
+                span.set_attributes({"sol": sol.astype(float).tolist(),
+                                     "is_reachable": bool(is_reachable),
+                                     "state": state,
+                                     "control_ik.previous_sol[name]": self.control_ik.previous_sol[name].tolist(),
+                                     "control_ik.last_call_t2[name]": str(self.control_ik.last_call_t[name]),
+                                     })
+
+
             else:
                 self.logger.error("IK target pose should be only for the arms")
                 raise ValueError("IK target pose should be only for the arms")
