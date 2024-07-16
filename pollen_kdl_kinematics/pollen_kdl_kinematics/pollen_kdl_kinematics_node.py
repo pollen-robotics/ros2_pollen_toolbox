@@ -8,7 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose, PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
-from pollen_msgs.msg import IKRequest, ReachabilityState
+from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -258,6 +258,18 @@ class PollenKdlKinematics(LifecycleNode):
                     forward_publisher=head_forward_position_pub,
                 ),
             )
+            sub = self.create_subscription(
+                msg_type=CartTarget,
+                topic="/head/cart_target_pose",
+                qos_profile=high_freq_qos_profile,
+                callback=partial(
+                    self.on_ik_target_pose_neck,
+                    name="head",
+                    # head straight
+                    q0=[0, 0, 0],
+                    forward_publisher=head_forward_position_pub,
+                ),
+            )
             self.target_sub["head"] = sub
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
@@ -420,9 +432,32 @@ class PollenKdlKinematics(LifecycleNode):
 
         return response
 
-    def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
+    def on_ik_target_pose_neck(self, msg: CartTarget, name, q0, forward_publisher):
+        if "arm" in name:
+            self.logger.error("IK target pose should be only for the arms")
+            raise ValueError("IK target pose should be only for the arms")
 
-        self.logger.warn(f"on_target_pose.{name}: {msg.traceparent}")
+        M = ros_pose_to_matrix(msg.pose.pose)
+        ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
+
+        with self.tracer.start_as_current_span(f"{name}::on_ik_target_pose_neck",
+                                                kind=trace.SpanKind.SERVER,
+                                                context=ctx) as span:
+            span.set_attributes({"rpc.system": "ros_topic", "server.address": "localhost"})
+
+            error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+
+            msg = Float64MultiArray()
+            msg.data = sol
+            forward_publisher.publish(msg)
+
+    def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
 
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
@@ -487,6 +522,9 @@ class PollenKdlKinematics(LifecycleNode):
 
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
+        '''
+            # LEGACY (for old ros bags)
+        '''
         M = ros_pose_to_matrix(msg.pose)
 
         if "arm" in name:

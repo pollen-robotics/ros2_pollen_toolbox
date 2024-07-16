@@ -27,6 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GotoRequest.msg"
   "msg/GotoResult.msg"
   "msg/IKRequest.msg"
+  "msg/CartTarget.msg"
   "msg/ReachabilityState.msg"
 
   "action/Goto.action"
