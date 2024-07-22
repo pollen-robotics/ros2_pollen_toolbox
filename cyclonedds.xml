@@ -9,6 +9,7 @@
           <ParticipantIndex>auto</ParticipantIndex>
           <Peers>
               <Peer Address="localhost"/>
+              <Peer Address="172.18.0.5"/> 
           </Peers>
           <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       </Discovery>
