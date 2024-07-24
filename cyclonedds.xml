@@ -9,7 +9,7 @@
           <ParticipantIndex>auto</ParticipantIndex>
           <Peers>
               <Peer Address="localhost"/>
-              <Peer Address="172.18.0.5"/> 
+              <Peer Address="webrtc_streaming_playback_ros"/> 
           </Peers>
           <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       </Discovery>
