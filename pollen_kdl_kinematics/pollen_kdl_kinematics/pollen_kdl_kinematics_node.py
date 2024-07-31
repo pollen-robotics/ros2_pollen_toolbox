@@ -303,6 +303,7 @@ class PollenKdlKinematics(LifecycleNode):
             logger=self.logger,
             current_joints=current_joints,
             current_pose=current_pose,
+            urdf=self.urdf,
         )
 
         self.logger.info(f"Kinematics node ready!")
