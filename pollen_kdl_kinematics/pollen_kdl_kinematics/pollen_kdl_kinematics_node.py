@@ -35,16 +35,25 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
 from .pose_averager import PoseAverager
 
 from . import tracing_helper
-from opentelemetry import trace
+
+NODE_NAME = "pollen_kdl_kinematics_node"
+tracing_helper.configure_pyroscope(
+    NODE_NAME,
+    tags={
+        "server": "true",
+        "client": "true",
+    },
+)
+
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
-        super().__init__("pollen_kdl_kinematics_node")
+        super().__init__(NODE_NAME)
         self.logger = self.get_logger()
 
         self.urdf = self.retrieve_urdf()
 
-        self.tracer = tracing_helper.tracer("pollen_kdl_kinematics_node")
+        self.tracer = tracing_helper.tracer(NODE_NAME)
 
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
@@ -440,15 +449,21 @@ class PollenKdlKinematics(LifecycleNode):
         M = ros_pose_to_matrix(msg.pose.pose)
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
-        with self.tracer.start_as_current_span(f"{name}::on_ik_target_pose_neck",
-                                                kind=trace.SpanKind.SERVER,
-                                                context=ctx) as span:
+        trace_name = f"{name}::on_ik_target_pose_neck"
+        with tracing_helper.pyroscope.tag_wrapper(
+            {"trace_name": trace_name}
+        ), self.tracer.start_as_current_span(
+            trace_name, kind=tracing_helper.trace.SpanKind.SERVER, context=ctx
+        ) as span:
 
-            span.set_attributes({"rpc.system": "ros_topic",
-                                 "server.address": "localhost",
-                                 "q0": q0,
-                                 "M": M.astype(float).flatten().tolist(),
-                                 })
+            span.set_attributes(
+                {
+                    "rpc.system": "ros_topic",
+                    "server.address": "localhost",
+                    "q0": q0,
+                    "M": M.astype(float).flatten().tolist(),
+                }
+            )
 
             error, sol = inverse_kinematics(
                     self.ik_solver[name],
@@ -467,16 +482,26 @@ class PollenKdlKinematics(LifecycleNode):
 
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
-        with self.tracer.start_as_current_span(f"{name}::on_ik_target_pose",
-                                                kind=trace.SpanKind.SERVER,
-                                                context=ctx) as span:
+        trace_name = f"{name}::on_ik_target_pose"
+        with (
+            tracing_helper.pyroscope.tag_wrapper({"trace_name": trace_name})
+            if tracing_helper.profiling_enabled()
+            else tracing_helper.nullcontext()
+        ), self.tracer.start_as_current_span(
+            trace_name, kind=tracing_helper.trace.SpanKind.SERVER, context=ctx
+        ) as span:
             M = ros_pose_to_matrix(msg.pose.pose)
 
-            span.set_attributes({"rpc.system": "ros_topic",
-                                 "server.address": "localhost",
-                                 "M": M.astype(float).flatten().tolist(),
-                                 "control_ik.last_call_t1[name]": str(self.control_ik.last_call_t[name]),
-                                 })
+            span.set_attributes(
+                {
+                    "rpc.system": "ros_topic",
+                    "server.address": "localhost",
+                    "M": M.astype(float).flatten().tolist(),
+                    "control_ik.last_call_t1[name]": str(
+                        self.control_ik.last_call_t[name]
+                    ),
+                }
+            )
 
             constrained_mode = msg.constrained_mode
             continuous_mode = msg.continuous_mode
@@ -516,13 +541,19 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max=d_theta_max,
                     preferred_theta=preferred_theta,
                 )
-                span.set_attributes({"sol": sol.astype(float).tolist(),
-                                     "is_reachable": bool(is_reachable),
-                                     "state": state,
-                                     "control_ik.previous_sol[name]": self.control_ik.previous_sol[name].tolist(),
-                                     "control_ik.last_call_t2[name]": str(self.control_ik.last_call_t[name]),
-                                     })
-
+                span.set_attributes(
+                    {
+                        "sol": sol.astype(float).tolist(),
+                        "is_reachable": bool(is_reachable),
+                        "state": state,
+                        "control_ik.previous_sol[name]": self.control_ik.previous_sol[
+                            name
+                        ].tolist(),
+                        "control_ik.last_call_t2[name]": str(
+                            self.control_ik.last_call_t[name]
+                        ),
+                    }
+                )
 
             else:
                 self.logger.error("IK target pose should be only for the arms")
