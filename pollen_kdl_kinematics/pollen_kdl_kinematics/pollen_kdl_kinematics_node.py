@@ -13,6 +13,8 @@ from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
 from reachy2_symbolic_ik.control_ik import ControlIK
+
+from reachy_utils.config import ReachyConfig
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (allow_multiturn,
                                        get_best_continuous_theta,
@@ -71,35 +73,11 @@ class PollenKdlKinematics(LifecycleNode):
         )
 
         self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
-        # Symbolic IK inits.
-        # A balanced position between elbow down and elbow at 90°
-        # self.prefered_theta = -4 * np.pi / 6  # 5 * np.pi / 4  # np.pi / 4
-        # self.nb_search_points = 20
-        # self.previous_theta = {}
-        # self.previous_sol = {}
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
 
             chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
-
-            # self.symbolic_ik_solver[arm] = SymbolicIK(
-            #     arm=arm,
-            #     upper_arm_size=0.28,
-            #     forearm_size=0.28,
-            #     gripper_size=0.10,
-            #     wrist_limit=np.rad2deg(self.orbita3D_max_angle),
-            #     # This is the "correct" stuff for alpha
-            #     # shoulder_orientation_offset=[10, 0, 15],
-            #     # elbow_orientation_offset=[0, 0, 0],
-            #     # This is the "wrong" values currently used by the alpha
-            #     # shoulder_orientation_offset=[0, 0, 15],
-            #     # shoulder_position=[-0.0479, -0.1913, 0.025],
-            # )
-
-            # self.previous_theta[arm] = None
-            # self.previous_sol[arm] = None
-            # self.last_call_t[arm] = 0
 
             # We automatically loads the kinematics corresponding to the config
             if chain.getNrOfJoints():
@@ -299,11 +277,15 @@ class PollenKdlKinematics(LifecycleNode):
                 self.chain["l_arm"].getNrOfJoints(),
             )
         current_pose = [current_pose_r, current_pose_l]
+
+        reachy_config = ReachyConfig()
+
         self.control_ik = ControlIK(
             logger=self.logger,
             current_joints=current_joints,
             current_pose=current_pose,
             urdf=self.urdf,
+            reachy_model=reachy_config.model,
         )
 
         self.logger.info(f"Kinematics node ready!")
