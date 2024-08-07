@@ -450,6 +450,13 @@ class PollenKdlKinematics(LifecycleNode):
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose_neck"
+        tracing_helper.travel_span(f"{trace_name}_msg_travel",
+                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+                                   tracer=self.tracer,
+                                   context=ctx,
+                                   )
+
+
         with tracing_helper.PollenSpan(tracer=self.tracer,
                                        trace_name=trace_name,
                                        with_pyroscope=True,
