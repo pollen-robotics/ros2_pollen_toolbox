@@ -450,13 +450,14 @@ class PollenKdlKinematics(LifecycleNode):
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose_neck"
-        with tracing_helper.pyroscope.tag_wrapper(
-            {"trace_name": trace_name}
-        ), self.tracer.start_as_current_span(
-            trace_name, kind=tracing_helper.trace.SpanKind.SERVER, context=ctx
-        ) as span:
-
-            span.set_attributes(
+        with tracing_helper.PollenSpan(tracer=self.tracer,
+                                       trace_name=trace_name,
+                                       with_pyroscope=True,
+                                       pyroscope_tags={"trace_name": trace_name},
+                                       kind=tracing_helper.trace.SpanKind.SERVER,
+                                       context=ctx,
+                                       ) as stack:
+            stack.span.set_attributes(
                 {
                     "rpc.system": "ros_topic",
                     "server.address": "localhost",
@@ -472,7 +473,7 @@ class PollenKdlKinematics(LifecycleNode):
                     nb_joints=self.chain[name].getNrOfJoints(),
                 )
             sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
-            span.set_attributes({"sol": sol, "error": error})
+            stack.span.set_attributes({"sol": sol, "error": error})
 
             msg = Float64MultiArray()
             msg.data = sol
@@ -483,16 +484,23 @@ class PollenKdlKinematics(LifecycleNode):
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose"
-        with (
-            tracing_helper.pyroscope.tag_wrapper({"trace_name": trace_name})
-            if tracing_helper.profiling_enabled()
-            else tracing_helper.nullcontext()
-        ), self.tracer.start_as_current_span(
-            trace_name, kind=tracing_helper.trace.SpanKind.SERVER, context=ctx
-        ) as span:
+        tracing_helper.travel_span(f"{trace_name}_msg_travel",
+                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+                                   tracer=self.tracer,
+                                   context=ctx,
+                                   )
+
+
+        with tracing_helper.PollenSpan(tracer=self.tracer,
+                                       trace_name=trace_name,
+                                       with_pyroscope=True,
+                                       pyroscope_tags={"trace_name": trace_name},
+                                       kind=tracing_helper.trace.SpanKind.SERVER,
+                                       context=ctx,
+                                       ) as stack:
             M = ros_pose_to_matrix(msg.pose.pose)
 
-            span.set_attributes(
+            stack.span.set_attributes(
                 {
                     "rpc.system": "ros_topic",
                     "server.address": "localhost",
@@ -541,7 +549,7 @@ class PollenKdlKinematics(LifecycleNode):
                     d_theta_max=d_theta_max,
                     preferred_theta=preferred_theta,
                 )
-                span.set_attributes(
+                stack.span.set_attributes(
                     {
                         "sol": sol.astype(float).tolist(),
                         "is_reachable": bool(is_reachable),
