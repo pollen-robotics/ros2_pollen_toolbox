@@ -443,8 +443,8 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_ik_target_pose_neck(self, msg: CartTarget, name, q0, forward_publisher):
         if "arm" in name:
-            self.logger.error("IK target pose should be only for the arms")
-            raise ValueError("IK target pose should be only for the arms")
+            self.logger.error("IK target pose neck should be only for the neck")
+            raise ValueError("IK target pose neck should be only for the neck")
 
         M = ros_pose_to_matrix(msg.pose.pose)
         ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
