@@ -33,6 +33,7 @@ from std_msgs.msg import Float64MultiArray
 from pollen_msgs.msg import Gripper
 from pollen_msgs.srv import GetDynamicState
 
+import time
 
 from .forward_controller import ForwardControllersPool
 from . import tracing_helper
@@ -53,6 +54,7 @@ class DynamicStateRouterNode(Node):
         super().__init__(node_name=node_name)
         self.logger = self.get_logger()
         self.tracer = tracing_helper.tracer(node_name)
+        self.on_dynamic_joint_commands_counter = 0
 
         self.freq, self.forward_controllers = ForwardControllersPool.parse(
             self.logger, controllers_file
@@ -179,28 +181,34 @@ class DynamicStateRouterNode(Node):
     # Subscription: dynamic_joint_commands (DynamicJointState)
     def on_dynamic_joint_commands(self, command: DynamicJointState):
         """Retreive the joint commands from /dynamic_joint_commands."""
-        with self.pub_lock:
-            with tracing_helper.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands"):
+        self.on_dynamic_joint_commands_counter += 1
+        with tracing_helper.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack:
+            start_wait = time.time_ns()
+            stack.span.set_attributes({
+                    "on_dynamic_joint_commands_counter": self.on_dynamic_joint_commands_counter
+                })
+            with self.pub_lock:
+                tracing_helper.travel_span("wait_for_pub_lock",
+                                           start_time=start_wait,
+                                           tracer=self.tracer,
+                                           )
                 self.requested_commands.traceparent = tracing_helper.traceparent()
-
-
-            for name, iv in zip(command.joint_names, command.interface_values):
-                if name not in self.joint_state:
-                    self.logger.warning(
-                        f'Unknown joint "{name}" ({list(self.joint_state.keys())})'
-                    )
-                    continue
-
-                for k, v in zip(iv.interface_names, iv.values):
-                    if k not in self.joint_state[name]:
+                for name, iv in zip(command.joint_names, command.interface_values):
+                    if name not in self.joint_state:
                         self.logger.warning(
-                            f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})'
+                            f'Unknown joint "{name}" ({list(self.joint_state.keys())})'
                         )
                         continue
-                    self.requested_commands.commands[name][k] = v
 
-
-        self.joint_command_request_pub.set()
+                    for k, v in zip(iv.interface_names, iv.values):
+                        if k not in self.joint_state[name]:
+                            self.logger.warning(
+                                f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})'
+                            )
+                            continue
+                        self.requested_commands.commands[name][k] = v
+            self.joint_command_request_pub.set()
+        self.on_dynamic_joint_commands_counter -= 1
 
     def publish_command_loop(self):
         while rclpy.ok():
