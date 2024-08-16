@@ -36,7 +36,7 @@ from pollen_msgs.srv import GetDynamicState
 import time
 
 from .forward_controller import ForwardControllersPool
-from . import tracing_helper
+import reachy2_monitoring as rm
 
 class TracedCommands:
     def __init__(self, traceparent="") -> None:
@@ -53,7 +53,7 @@ class DynamicStateRouterNode(Node):
     def __init__(self, node_name, controllers_file):
         super().__init__(node_name=node_name)
         self.logger = self.get_logger()
-        self.tracer = tracing_helper.tracer(node_name)
+        self.tracer = rm.tracer(node_name)
         self.on_dynamic_joint_commands_counter = 0
 
         self.freq, self.forward_controllers = ForwardControllersPool.parse(
@@ -182,17 +182,17 @@ class DynamicStateRouterNode(Node):
     def on_dynamic_joint_commands(self, command: DynamicJointState):
         """Retreive the joint commands from /dynamic_joint_commands."""
         self.on_dynamic_joint_commands_counter += 1
-        with tracing_helper.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack:
+        with rm.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack:
             start_wait = time.time_ns()
             stack.span.set_attributes({
                     "on_dynamic_joint_commands_counter": self.on_dynamic_joint_commands_counter
                 })
             with self.pub_lock:
-                tracing_helper.travel_span("wait_for_pub_lock",
+                rm.travel_span("wait_for_pub_lock",
                                            start_time=start_wait,
                                            tracer=self.tracer,
                                            )
-                self.requested_commands.traceparent = tracing_helper.traceparent()
+                self.requested_commands.traceparent = rm.traceparent()
                 for name, iv in zip(command.joint_names, command.interface_values):
                     if name not in self.joint_state:
                         self.logger.warning(
@@ -230,13 +230,13 @@ class DynamicStateRouterNode(Node):
         self.joint_commands_pub.publish(msg)
 
     def handle_commands(self, commands):
-        ctx = tracing_helper.ctx_from_traceparent(commands.traceparent)
-        with tracing_helper.PollenSpan(tracer=self.tracer,
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
                                        trace_name="handle_commands",
                                        context=ctx):
-            gripper_commands = TracedCommands(traceparent=tracing_helper.traceparent())
-            regular_commands = TracedCommands(traceparent=tracing_helper.traceparent())
-            pid_commands = TracedCommands(traceparent=tracing_helper.traceparent())
+            gripper_commands = TracedCommands(traceparent=rm.traceparent())
+            regular_commands = TracedCommands(traceparent=rm.traceparent())
+            pid_commands = TracedCommands(traceparent=rm.traceparent())
 
             for joint, iv in commands.commands.items():
                 for interface, value in iv.items():
@@ -254,8 +254,8 @@ class DynamicStateRouterNode(Node):
                 self.handle_regular_commands(regular_commands)
 
     def handle_gripper_commands(self, commands):
-        ctx = tracing_helper.ctx_from_traceparent(commands.traceparent)
-        with tracing_helper.PollenSpan(tracer=self.tracer,
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
                                        trace_name="handle_gripper_commands",
                                        context=ctx):
             msg = Gripper()
@@ -291,8 +291,8 @@ class DynamicStateRouterNode(Node):
         self.fc_publisher["forward_pid_controller"].publish(msg)
 
     def handle_regular_commands(self, commands):
-        ctx = tracing_helper.ctx_from_traceparent(commands.traceparent)
-        with tracing_helper.PollenSpan(tracer=self.tracer,
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
                                        trace_name="handle_gripper_commands",
                                        context=ctx):
             # Group commands by forward controller

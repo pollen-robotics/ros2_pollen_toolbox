@@ -34,10 +34,10 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
-from . import tracing_helper
+import reachy2_monitoring as rm
 
 NODE_NAME = "pollen_kdl_kinematics_node"
-tracing_helper.configure_pyroscope(
+rm.configure_pyroscope(
     NODE_NAME,
     tags={
         "server": "true",
@@ -53,7 +53,7 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.urdf = self.retrieve_urdf()
 
-        self.tracer = tracing_helper.tracer(NODE_NAME)
+        self.tracer = rm.tracer(NODE_NAME)
 
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
@@ -447,21 +447,21 @@ class PollenKdlKinematics(LifecycleNode):
             raise ValueError("IK target pose neck should be only for the neck")
 
         M = ros_pose_to_matrix(msg.pose.pose)
-        ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
+        ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose_neck"
-        tracing_helper.travel_span(f"{trace_name}_msg_travel",
+        rm.travel_span(f"{trace_name}_msg_travel",
                                    start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
                                    tracer=self.tracer,
                                    context=ctx,
                                    )
 
 
-        with tracing_helper.PollenSpan(tracer=self.tracer,
+        with rm.PollenSpan(tracer=self.tracer,
                                        trace_name=trace_name,
                                        with_pyroscope=True,
                                        pyroscope_tags={"trace_name": trace_name},
-                                       kind=tracing_helper.trace.SpanKind.SERVER,
+                                       kind=rm.trace.SpanKind.SERVER,
                                        context=ctx,
                                        ) as stack:
             stack.span.set_attributes(
@@ -488,21 +488,21 @@ class PollenKdlKinematics(LifecycleNode):
 
     def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
 
-        ctx = tracing_helper.ctx_from_traceparent(msg.traceparent)
+        ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose"
-        tracing_helper.travel_span(f"{trace_name}_msg_travel",
+        rm.travel_span(f"{trace_name}_msg_travel",
                                    start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
                                    tracer=self.tracer,
                                    context=ctx,
                                    )
 
 
-        with tracing_helper.PollenSpan(tracer=self.tracer,
+        with rm.PollenSpan(tracer=self.tracer,
                                        trace_name=trace_name,
                                        with_pyroscope=True,
                                        pyroscope_tags={"trace_name": trace_name},
-                                       kind=tracing_helper.trace.SpanKind.SERVER,
+                                       kind=rm.trace.SpanKind.SERVER,
                                        context=ctx,
                                        ) as stack:
             M = ros_pose_to_matrix(msg.pose.pose)
