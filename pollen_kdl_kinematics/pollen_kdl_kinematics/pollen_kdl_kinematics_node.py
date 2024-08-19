@@ -8,7 +8,7 @@ import numpy as np
 import rclpy
 from geometry_msgs.msg import Pose, PoseStamped
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
-from pollen_msgs.msg import IKRequest, ReachabilityState
+from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
@@ -34,13 +34,26 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
                              inverse_kinematics, ros_pose_to_matrix)
 from .pose_averager import PoseAverager
 
+import reachy2_monitoring as rm
+
+NODE_NAME = "pollen_kdl_kinematics_node"
+rm.configure_pyroscope(
+    NODE_NAME,
+    tags={
+        "server": "true",
+        "client": "true",
+    },
+)
+
 
 class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
-        super().__init__("pollen_kdl_kinematics_node")
+        super().__init__(NODE_NAME)
         self.logger = self.get_logger()
 
         self.urdf = self.retrieve_urdf()
+
+        self.tracer = rm.tracer(NODE_NAME)
 
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
@@ -254,6 +267,18 @@ class PollenKdlKinematics(LifecycleNode):
                     forward_publisher=head_forward_position_pub,
                 ),
             )
+            sub = self.create_subscription(
+                msg_type=CartTarget,
+                topic="/head/cart_target_pose",
+                qos_profile=high_freq_qos_profile,
+                callback=partial(
+                    self.on_ik_target_pose_neck,
+                    name="head",
+                    # head straight
+                    q0=[0, 0, 0],
+                    forward_publisher=head_forward_position_pub,
+                ),
+            )
             self.target_sub["head"] = sub
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
@@ -416,63 +441,155 @@ class PollenKdlKinematics(LifecycleNode):
 
         return response
 
-    def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
-        M = ros_pose_to_matrix(msg.pose.pose)
-        constrained_mode = msg.constrained_mode
-        continuous_mode = msg.continuous_mode
-        preferred_theta = msg.preferred_theta
-        d_theta_max = msg.d_theta_max
-        order_id = msg.order_id
-
-        if continuous_mode == "undefined":
-            continuous_mode = "continuous"
-
-        if constrained_mode == "undefined":
-            constrained_mode = "unconstrained"
-
-        # if constrained_mode == "low_elbow":
-        #     interval_limit = [-4 * np.pi / 5, 0]
-        # self.logger.info(f"Preferred theta: {preferred_theta}")
-        # self.logger.info(f"Continuous mode: {continuous_mode}")
-        # self.logger.info(f"Constrained mode: {constrained_mode}")
-        # self.logger.info(f"Order ID: {order_id}")
-        # self.logger.info(f"Max d_theta: {d_theta_max}")
-
+    def on_ik_target_pose_neck(self, msg: CartTarget, name, q0, forward_publisher):
         if "arm" in name:
-            current_joints = self.get_current_position(self.chain[name])
-            error, current_pose = forward_kinematics(
-                self.fk_solver[name],
-                current_joints,
-                self.chain[name].getNrOfJoints(),
+            self.logger.error("IK target pose neck should be only for the neck")
+            raise ValueError("IK target pose neck should be only for the neck")
+
+        M = ros_pose_to_matrix(msg.pose.pose)
+        ctx = rm.ctx_from_traceparent(msg.traceparent)
+
+        trace_name = f"{name}::on_ik_target_pose_neck"
+        rm.travel_span(f"{trace_name}_msg_travel",
+                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+                                   tracer=self.tracer,
+                                   context=ctx,
+                                   )
+
+
+        with rm.PollenSpan(tracer=self.tracer,
+                                       trace_name=trace_name,
+                                       with_pyroscope=True,
+                                       pyroscope_tags={"trace_name": trace_name},
+                                       kind=rm.trace.SpanKind.SERVER,
+                                       context=ctx,
+                                       ) as stack:
+            stack.span.set_attributes(
+                {
+                    "rpc.system": "ros_topic",
+                    "server.address": "localhost",
+                    "q0": q0,
+                    "M": M.astype(float).flatten().tolist(),
+                }
             )
 
-            sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                name,
-                M,
-                continuous_mode,
-                current_joints=current_joints,
-                constrained_mode=constrained_mode,
-                current_pose=current_pose,
-                d_theta_max=d_theta_max,
-                preferred_theta=preferred_theta,
-            )
-        else:
-            self.logger.error("IK target pose should be only for the arms")
-            raise ValueError("IK target pose should be only for the arms")
+            error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+            stack.span.set_attributes({"sol": sol, "error": error})
 
-        msg = Float64MultiArray()
-        msg.data = sol
-        forward_publisher.publish(msg)
-        reachability_msg = ReachabilityState()
-        reachability_msg.header.stamp = self.get_clock().now().to_msg()
-        reachability_msg.header.frame_id = "torso"
-        reachability_msg.is_reachable = is_reachable
-        reachability_msg.state = state
-        reachability_msg.order_id = order_id
-        self.reachability_pub[name].publish(reachability_msg)
+            msg = Float64MultiArray()
+            msg.data = sol
+            forward_publisher.publish(msg)
+
+    def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
+
+        ctx = rm.ctx_from_traceparent(msg.traceparent)
+
+        trace_name = f"{name}::on_ik_target_pose"
+        rm.travel_span(f"{trace_name}_msg_travel",
+                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+                                   tracer=self.tracer,
+                                   context=ctx,
+                                   )
+
+
+        with rm.PollenSpan(tracer=self.tracer,
+                                       trace_name=trace_name,
+                                       with_pyroscope=True,
+                                       pyroscope_tags={"trace_name": trace_name},
+                                       kind=rm.trace.SpanKind.SERVER,
+                                       context=ctx,
+                                       ) as stack:
+            M = ros_pose_to_matrix(msg.pose.pose)
+
+            stack.span.set_attributes(
+                {
+                    "rpc.system": "ros_topic",
+                    "server.address": "localhost",
+                    "M": M.astype(float).flatten().tolist(),
+                    "control_ik.last_call_t1[name]": str(
+                        self.control_ik.last_call_t[name]
+                    ),
+                }
+            )
+
+            constrained_mode = msg.constrained_mode
+            continuous_mode = msg.continuous_mode
+            preferred_theta = msg.preferred_theta
+            d_theta_max = msg.d_theta_max
+            order_id = msg.order_id
+
+            if continuous_mode == "undefined":
+                continuous_mode = "continuous"
+
+            if constrained_mode == "undefined":
+                constrained_mode = "unconstrained"
+
+            # if constrained_mode == "low_elbow":
+            #     interval_limit = [-4 * np.pi / 5, 0]
+            # self.logger.info(f"Preferred theta: {preferred_theta}")
+            # self.logger.info(f"Continuous mode: {continuous_mode}")
+            # self.logger.info(f"Constrained mode: {constrained_mode}")
+            # self.logger.info(f"Order ID: {order_id}")
+            # self.logger.info(f"Max d_theta: {d_theta_max}")
+
+            if "arm" in name:
+                current_joints = self.get_current_position(self.chain[name])
+                error, current_pose = forward_kinematics(
+                    self.fk_solver[name],
+                    current_joints,
+                    self.chain[name].getNrOfJoints(),
+                )
+
+                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                    name,
+                    M,
+                    continuous_mode,
+                    current_joints=current_joints,
+                    constrained_mode=constrained_mode,
+                    current_pose=current_pose,
+                    d_theta_max=d_theta_max,
+                    preferred_theta=preferred_theta,
+                )
+                stack.span.set_attributes(
+                    {
+                        "sol": sol.astype(float).tolist(),
+                        "is_reachable": bool(is_reachable),
+                        "state": state,
+                        "control_ik.previous_sol[name]": self.control_ik.previous_sol[
+                            name
+                        ].tolist(),
+                        "control_ik.last_call_t2[name]": str(
+                            self.control_ik.last_call_t[name]
+                        ),
+                    }
+                )
+
+            else:
+                self.logger.error("IK target pose should be only for the arms")
+                raise ValueError("IK target pose should be only for the arms")
+
+            msg = Float64MultiArray()
+            msg.data = sol
+            forward_publisher.publish(msg)
+            reachability_msg = ReachabilityState()
+            reachability_msg.header.stamp = self.get_clock().now().to_msg()
+            reachability_msg.header.frame_id = "torso"
+            reachability_msg.is_reachable = is_reachable
+            reachability_msg.state = state
+            reachability_msg.order_id = order_id
+            self.reachability_pub[name].publish(reachability_msg)
 
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
+        '''
+            # LEGACY (for old ros bags)
+        '''
         M = ros_pose_to_matrix(msg.pose)
 
         if "arm" in name:

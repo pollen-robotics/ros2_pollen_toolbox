@@ -21,3 +21,6 @@ string continuous_mode
 
 # When present this value must be unic for each message and it will be used to identify reachability information for a given request
 int64 order_id
+
+# used to link spans for opentelemetry infrastructure
+string traceparent

@@ -33,14 +33,28 @@ from std_msgs.msg import Float64MultiArray
 from pollen_msgs.msg import Gripper
 from pollen_msgs.srv import GetDynamicState
 
+import time
 
 from .forward_controller import ForwardControllersPool
+import reachy2_monitoring as rm
+
+class TracedCommands:
+    def __init__(self, traceparent="") -> None:
+        self.traceparent = traceparent
+        self.commands = defaultdict(dict)
+
+    def clear(self):
+        self.traceparent = ""
+        self.commands.clear()
+
 
 
 class DynamicStateRouterNode(Node):
     def __init__(self, node_name, controllers_file):
         super().__init__(node_name=node_name)
         self.logger = self.get_logger()
+        self.tracer = rm.tracer(node_name)
+        self.on_dynamic_joint_commands_counter = 0
 
         self.freq, self.forward_controllers = ForwardControllersPool.parse(
             self.logger, controllers_file
@@ -97,7 +111,7 @@ class DynamicStateRouterNode(Node):
         # SUBSCRIPTION: /dynamic_joint_commands (DynamicJointState)
         # We need to get publisher to all forward controllers and the gripper safe controller
         self.joint_command_request_pub = Event()
-        self.requested_commands = defaultdict(dict)
+        self.requested_commands = TracedCommands()
         self.pub_lock = Lock()
         self.publish_command_t = Thread(target=self.publish_command_loop)
         self.publish_command_t.daemon = True
@@ -167,24 +181,34 @@ class DynamicStateRouterNode(Node):
     # Subscription: dynamic_joint_commands (DynamicJointState)
     def on_dynamic_joint_commands(self, command: DynamicJointState):
         """Retreive the joint commands from /dynamic_joint_commands."""
-        with self.pub_lock:
-            for name, iv in zip(command.joint_names, command.interface_values):
-                if name not in self.joint_state:
-                    self.logger.warning(
-                        f'Unknown joint "{name}" ({list(self.joint_state.keys())})'
-                    )
-                    continue
-
-                for k, v in zip(iv.interface_names, iv.values):
-                    if k not in self.joint_state[name]:
+        self.on_dynamic_joint_commands_counter += 1
+        with rm.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack:
+            start_wait = time.time_ns()
+            stack.span.set_attributes({
+                    "on_dynamic_joint_commands_counter": self.on_dynamic_joint_commands_counter
+                })
+            with self.pub_lock:
+                rm.travel_span("wait_for_pub_lock",
+                                           start_time=start_wait,
+                                           tracer=self.tracer,
+                                           )
+                self.requested_commands.traceparent = rm.traceparent()
+                for name, iv in zip(command.joint_names, command.interface_values):
+                    if name not in self.joint_state:
                         self.logger.warning(
-                            f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})'
+                            f'Unknown joint "{name}" ({list(self.joint_state.keys())})'
                         )
                         continue
 
-                    self.requested_commands[name][k] = v
-
-        self.joint_command_request_pub.set()
+                    for k, v in zip(iv.interface_names, iv.values):
+                        if k not in self.joint_state[name]:
+                            self.logger.warning(
+                                f'Unknown interface for joint "{k}" ({list(self.joint_state[name].keys())})'
+                            )
+                            continue
+                        self.requested_commands.commands[name][k] = v
+            self.joint_command_request_pub.set()
+        self.on_dynamic_joint_commands_counter -= 1
 
     def publish_command_loop(self):
         while rclpy.ok():
@@ -206,37 +230,46 @@ class DynamicStateRouterNode(Node):
         self.joint_commands_pub.publish(msg)
 
     def handle_commands(self, commands):
-        gripper_commands = defaultdict(dict)
-        regular_commands = defaultdict(dict)
-        pid_commands = defaultdict(dict)
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
+                                       trace_name="handle_commands",
+                                       context=ctx):
+            gripper_commands = TracedCommands(traceparent=rm.traceparent())
+            regular_commands = TracedCommands(traceparent=rm.traceparent())
+            pid_commands = TracedCommands(traceparent=rm.traceparent())
 
-        for joint, iv in commands.items():
-            for interface, value in iv.items():
-                if joint.endswith("finger") and interface == "position":
-                    gripper_commands[joint].update({interface: value})
-                elif interface in ("p_gain", "i_gain", "d_gain"):
-                    pid_commands[joint].update({interface: value})
-                else:
-                    regular_commands[joint].update({interface: value})
-        if gripper_commands:
-            self.handle_gripper_commands(gripper_commands)
-        if pid_commands:
-            self.handle_pid_commands(pid_commands)
-        if regular_commands:
-            self.handle_regular_commands(regular_commands)
+            for joint, iv in commands.commands.items():
+                for interface, value in iv.items():
+                    if joint.endswith("finger") and interface == "position":
+                        gripper_commands.commands[joint].update({interface: value})
+                    elif interface in ("p_gain", "i_gain", "d_gain"):
+                        pid_commands.commands[joint].update({interface: value})
+                    else:
+                        regular_commands.commands[joint].update({interface: value})
+            if gripper_commands:
+                self.handle_gripper_commands(gripper_commands)
+            if pid_commands:
+                self.handle_pid_commands(pid_commands)
+            if regular_commands:
+                self.handle_regular_commands(regular_commands)
 
     def handle_gripper_commands(self, commands):
-        msg = Gripper()
-        for joint, iv in commands.items():
-            for interface, value in iv.items():
-                if interface == "position":
-                    msg.name.append(joint)
-                    msg.opening.append(value)
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
+                                       trace_name="handle_gripper_commands",
+                                       context=ctx):
+            msg = Gripper()
+            for joint, iv in commands.commands.items():
+                for interface, value in iv.items():
+                    if interface == "position":
+                        msg.name.append(joint)
+                        msg.opening.append(value)
 
-        # TODO publish here to smartgripper node
-        self.gripper_pub.publish(msg)
+            # TODO publish here to smartgripper node
+            self.gripper_pub.publish(msg)
 
     def handle_pid_commands(self, commands):
+        # TODO implement PollenSpan with TracedCommands
         return
 
         pid_fc = self.forward_controllers["forward_pid_controller"]
@@ -244,55 +277,59 @@ class DynamicStateRouterNode(Node):
 
         for j in pid_fc.joints:
             for gain in ("p_gain", "i_gain", "d_gain"):
-                if j in commands and gain in commands[j]:
-                    msg.data.append(commands[j][gain])
+                if j in commands.commands and gain in commands.commands[j]:
+                    msg.data.append(commands.commands[j][gain])
                 elif j in self.joint_command and gain in self.joint_command[j]:
                     msg.data.append(self.joint_command[j][gain])
                 else:
                     msg.data.append(self.joint_state[j][gain])
 
-        for j, gains in commands.items():
+        for j, gains in commands.commands.items():
             for g, val in gains.items():
                 self.joint_command[j][g] = val
 
         self.fc_publisher["forward_pid_controller"].publish(msg)
 
     def handle_regular_commands(self, commands):
-        # Group commands by forward controller
-        to_pub = defaultdict(dict)
-        for joint, iv in commands.items():
-            for interface, value in iv.items():
-                try:
-                    fc = self.forward_controllers.get_corresponding_controller(
-                        joint, interface
-                    )
-                except KeyError:
-                    self.logger.error(
-                        f"Unknown interface '{interface}' for joint '{joint}'"
-                    )
-                    continue
-                to_pub[fc][joint] = value
+        ctx = rm.ctx_from_traceparent(commands.traceparent)
+        with rm.PollenSpan(tracer=self.tracer,
+                                       trace_name="handle_gripper_commands",
+                                       context=ctx):
+            # Group commands by forward controller
+            to_pub = defaultdict(dict)
+            for joint, iv in commands.commands.items():
+                for interface, value in iv.items():
+                    try:
+                        fc = self.forward_controllers.get_corresponding_controller(
+                            joint, interface
+                        )
+                    except KeyError:
+                        self.logger.error(
+                            f"Unknown interface '{interface}' for joint '{joint}'"
+                        )
+                        continue
+                    to_pub[fc][joint] = value
 
-        for fc, new_cmd in to_pub.items():
-            msg = Float64MultiArray()
+            for fc, new_cmd in to_pub.items():
+                msg = Float64MultiArray()
 
-            pub_interface = (
-                fc.interface if fc.interface != "position" else "target_position"
-            )
+                pub_interface = (
+                    fc.interface if fc.interface != "position" else "target_position"
+                )
 
-            msg.data = []
-            for j in fc.joints:
-                if j in new_cmd:
-                    msg.data.append(new_cmd[j])
-                elif pub_interface in self.joint_command[j]:
-                    msg.data.append(self.joint_command[j][pub_interface])
-                else:
-                    msg.data.append(self.joint_state[j][pub_interface])
+                msg.data = []
+                for j in fc.joints:
+                    if j in new_cmd:
+                        msg.data.append(new_cmd[j])
+                    elif pub_interface in self.joint_command[j]:
+                        msg.data.append(self.joint_command[j][pub_interface])
+                    else:
+                        msg.data.append(self.joint_state[j][pub_interface])
 
-            for j, val in new_cmd.items():
-                self.joint_command[j][pub_interface] = val
+                for j, val in new_cmd.items():
+                    self.joint_command[j][pub_interface] = val
 
-            self.fc_publisher[fc.name].publish(msg)
+                self.fc_publisher[fc.name].publish(msg)
 
     # Internal ROS2 subscription
     # Subscription: DynamicJointState cb
