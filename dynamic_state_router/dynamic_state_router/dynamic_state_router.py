@@ -213,7 +213,6 @@ class DynamicStateRouterNode(Node):
                             )
                             continue
                         self.requested_commands.commands[name][k] = v
-
             self.requested_commands.timestamp = time.time_ns()
             self.joint_command_request_pub.set()
         self.on_dynamic_joint_commands_counter -= 1
