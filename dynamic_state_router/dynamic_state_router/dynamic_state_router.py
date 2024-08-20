@@ -37,15 +37,18 @@ import time
 
 from .forward_controller import ForwardControllersPool
 import reachy2_monitoring as rm
+import prometheus_client as pc
 
 class TracedCommands:
     def __init__(self, traceparent="") -> None:
         self.traceparent = traceparent
         self.commands = defaultdict(dict)
+        self.timestamp = 0
 
     def clear(self):
         self.traceparent = ""
         self.commands.clear()
+        self.timestamp = 0
 
 
 
@@ -55,6 +58,9 @@ class DynamicStateRouterNode(Node):
         self.logger = self.get_logger()
         self.tracer = rm.tracer(node_name)
         self.on_dynamic_joint_commands_counter = 0
+        pc.start_http_server(10002)
+        self.sum_joint_states = pc.Summary("dynamic_state_router_on_dynamic_joint_states_time",
+                                           "Time spent during on_dynamic_joint_states callback")
 
         self.freq, self.forward_controllers = ForwardControllersPool.parse(
             self.logger, controllers_file
@@ -189,9 +195,9 @@ class DynamicStateRouterNode(Node):
                 })
             with self.pub_lock:
                 rm.travel_span("wait_for_pub_lock",
-                                           start_time=start_wait,
-                                           tracer=self.tracer,
-                                           )
+                               start_time=start_wait,
+                               tracer=self.tracer,
+                               )
                 self.requested_commands.traceparent = rm.traceparent()
                 for name, iv in zip(command.joint_names, command.interface_values):
                     if name not in self.joint_state:
@@ -207,12 +213,17 @@ class DynamicStateRouterNode(Node):
                             )
                             continue
                         self.requested_commands.commands[name][k] = v
+            self.requested_commands.timestamp = time.time_ns()
             self.joint_command_request_pub.set()
         self.on_dynamic_joint_commands_counter -= 1
 
     def publish_command_loop(self):
         while rclpy.ok():
             self.joint_command_request_pub.wait()
+            rm.travel_span("wait_for_command_request_pub",
+                           start_time=self.requested_commands.timestamp,
+                           tracer=self.tracer,
+                           context=rm.ctx_from_traceparent(self.requested_commands.traceparent))
 
             with self.pub_lock:
                 self.handle_commands(self.requested_commands)
@@ -335,26 +346,27 @@ class DynamicStateRouterNode(Node):
     # Subscription: DynamicJointState cb
     def on_dynamic_joint_states(self, state: DynamicJointState):
         """Retreive the joint state from /dynamic_joint_states."""
-        if not self.joint_state_ready.is_set():
-            for uid, name in enumerate(state.joint_names):
-                self.joint_state[name] = {}
-                self.joint_state[name]["name"] = name
-                self.joint_state[name]["uid"] = uid
+        with self.sum_joint_states.time():
+            if not self.joint_state_ready.is_set():
+                for uid, name in enumerate(state.joint_names):
+                    self.joint_state[name] = {}
+                    self.joint_state[name]["name"] = name
+                    self.joint_state[name]["uid"] = uid
 
-                self.joint_command[name] = {}
+                    self.joint_command[name] = {}
 
-        for uid, (name, kv) in enumerate(
-            zip(state.joint_names, state.interface_values)
-        ):
-            for k, v in zip(kv.interface_names, kv.values):
-                self.joint_state[name][k] = v
+            for uid, (name, kv) in enumerate(
+                zip(state.joint_names, state.interface_values)
+            ):
+                for k, v in zip(kv.interface_names, kv.values):
+                    self.joint_state[name][k] = v
 
-        if not self.joint_state_ready.is_set():
-            for name, state in self.joint_state.items():
-                if "position" in state:
-                    state["target_position"] = state["position"]
+            if not self.joint_state_ready.is_set():
+                for name, state in self.joint_state.items():
+                    if "position" in state:
+                        state["target_position"] = state["position"]
 
-            self.joint_state_ready.set()
+                self.joint_state_ready.set()
 
     def on_forward_position_controller_update(
         self, msg: Float64MultiArray, controller_name: str
