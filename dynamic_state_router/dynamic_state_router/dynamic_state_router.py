@@ -43,10 +43,12 @@ class TracedCommands:
     def __init__(self, traceparent="") -> None:
         self.traceparent = traceparent
         self.commands = defaultdict(dict)
+        self.timestamp = 0
 
     def clear(self):
         self.traceparent = ""
         self.commands.clear()
+        self.timestamp = 0
 
 
 
@@ -193,9 +195,9 @@ class DynamicStateRouterNode(Node):
                 })
             with self.pub_lock:
                 rm.travel_span("wait_for_pub_lock",
-                                           start_time=start_wait,
-                                           tracer=self.tracer,
-                                           )
+                               start_time=start_wait,
+                               tracer=self.tracer,
+                               )
                 self.requested_commands.traceparent = rm.traceparent()
                 for name, iv in zip(command.joint_names, command.interface_values):
                     if name not in self.joint_state:
@@ -211,12 +213,18 @@ class DynamicStateRouterNode(Node):
                             )
                             continue
                         self.requested_commands.commands[name][k] = v
+
+            self.requested_commands.timestamp = time.time_ns()
             self.joint_command_request_pub.set()
         self.on_dynamic_joint_commands_counter -= 1
 
     def publish_command_loop(self):
         while rclpy.ok():
             self.joint_command_request_pub.wait()
+            rm.travel_span("wait_for_command_request_pub",
+                           start_time=self.requested_commands.timestamp,
+                           tracer=self.tracer,
+                           context=rm.ctx_from_traceparent(self.requested_commands.traceparent))
 
             with self.pub_lock:
                 self.handle_commands(self.requested_commands)
