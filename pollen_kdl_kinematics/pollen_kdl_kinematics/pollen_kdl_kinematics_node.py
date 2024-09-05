@@ -563,7 +563,7 @@ class PollenKdlKinematics(LifecycleNode):
             reachability_msg = ReachabilityState()
             reachability_msg.header.stamp = self.get_clock().now().to_msg()
             reachability_msg.header.frame_id = "torso"
-            reachability_msg.is_reachable = is_reachable
+            reachability_msg.is_reachable = bool(is_reachable)
             reachability_msg.state = state
             reachability_msg.order_id = order_id
             self.reachability_pub[name].publish(reachability_msg)
