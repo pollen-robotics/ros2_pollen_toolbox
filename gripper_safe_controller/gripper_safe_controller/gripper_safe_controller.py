@@ -36,7 +36,7 @@ class GripperSafeController(Node):
         """
         super().__init__("grippers_controller")
         self.logger = self.get_logger()
-
+        
         # Topic subscriptions
         self.grippers_sub = self.create_subscription(
             msg_type=Gripper,
@@ -179,8 +179,11 @@ class GripperSafeController(Node):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
         data = [0.0] * len(self.gripper_forward_order)
 
+        # TODO this fix is only needed in the Gazebo mode, debug why
+        valid_names = self.gripper_forward_order.keys()
         for name, state in self.gripper_states.items():
-            data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
+            if name in valid_names:
+                data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
 
         msg = Float64MultiArray()
         msg.data = data
