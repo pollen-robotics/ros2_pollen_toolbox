@@ -36,7 +36,7 @@ class GripperSafeController(Node):
         """
         super().__init__("grippers_controller")
         self.logger = self.get_logger()
-        
+
         # Topic subscriptions
         self.grippers_sub = self.create_subscription(
             msg_type=Gripper,
@@ -156,7 +156,7 @@ class GripperSafeController(Node):
     # Gripper update loop
     def setup_grippers(self, msg: JointState):
         for name, position in zip(msg.name, msg.position):
-            if "finger" in name:
+            if "finger" in name and not "mimic" in name:
                 self.grippers[name] = {
                     "present_position": position,
                     "user_requested_goal_position": position,
