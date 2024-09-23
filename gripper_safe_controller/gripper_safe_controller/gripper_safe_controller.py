@@ -150,7 +150,7 @@ class GripperSafeController(Node):
         for name, position in zip(msg.name, msg.position):
             if name not in self.grippers:
                 continue
-
+            self.logger.debug(f'REAAAAD   Update gripper "{name}" position to {position}.')
             self.grippers[name]["present_position"] = position
 
     # Gripper update loop
@@ -179,11 +179,8 @@ class GripperSafeController(Node):
         """Publish new /*_gripper_forward_position_controller/commands for grippers."""
         data = [0.0] * len(self.gripper_forward_order)
 
-        # TODO this fix is only needed in the Gazebo mode, debug why
-        valid_names = self.gripper_forward_order.keys()
         for name, state in self.gripper_states.items():
-            if name in valid_names:
-                data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
+            data[self.gripper_forward_order[name]] = state.safe_computed_goal_position
 
         msg = Float64MultiArray()
         msg.data = data
