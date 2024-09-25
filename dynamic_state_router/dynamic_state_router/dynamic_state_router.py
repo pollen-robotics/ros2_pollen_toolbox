@@ -61,6 +61,10 @@ class DynamicStateRouterNode(Node):
         pc.start_http_server(10002)
         self.sum_joint_states = pc.Summary("dynamic_state_router_on_dynamic_joint_states_time",
                                            "Time spent during on_dynamic_joint_states callback")
+        self.sum_joint_commands = pc.Summary("dynamic_state_router_on_dynamic_joint_commands_time",
+                                             "Time spent during on_dynamic_joint_commands callback")
+        self.sum_handle_commands = pc.Summary("dynamic_state_router_handle_commands_time",
+                                              "Time spent during handle_commands callback")
 
         self.freq, self.forward_controllers = ForwardControllersPool.parse(
             self.logger, controllers_file
@@ -188,7 +192,7 @@ class DynamicStateRouterNode(Node):
     def on_dynamic_joint_commands(self, command: DynamicJointState):
         """Retreive the joint commands from /dynamic_joint_commands."""
         self.on_dynamic_joint_commands_counter += 1
-        with rm.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack:
+        with rm.PollenSpan(tracer=self.tracer, trace_name="on_dynamic_joint_commands") as stack, self.sum_joint_commands.time():
             start_wait = time.time_ns()
             stack.span.set_attributes({
                     "on_dynamic_joint_commands_counter": self.on_dynamic_joint_commands_counter
@@ -244,7 +248,7 @@ class DynamicStateRouterNode(Node):
         ctx = rm.ctx_from_traceparent(commands.traceparent)
         with rm.PollenSpan(tracer=self.tracer,
                                        trace_name="handle_commands",
-                                       context=ctx):
+                                       context=ctx), self.sum_handle_commands.time():
             gripper_commands = TracedCommands(traceparent=rm.traceparent())
             regular_commands = TracedCommands(traceparent=rm.traceparent())
             pid_commands = TracedCommands(traceparent=rm.traceparent())
