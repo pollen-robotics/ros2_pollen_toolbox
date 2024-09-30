@@ -363,7 +363,8 @@ class DynamicStateRouterNode(Node):
                 zip(state.joint_names, state.interface_values)
             ):
                 for k, v in zip(kv.interface_names, kv.values):
-                    self.joint_state[name][k] = v
+                    if not "mimic" in name:
+                        self.joint_state[name][k] = v
 
             if not self.joint_state_ready.is_set():
                 for name, state in self.joint_state.items():
