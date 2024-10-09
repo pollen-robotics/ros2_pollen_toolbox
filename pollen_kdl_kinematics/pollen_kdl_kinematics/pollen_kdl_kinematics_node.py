@@ -37,6 +37,7 @@ from .kdl_kinematics import (forward_kinematics, generate_solver,
 from .pose_averager import PoseAverager
 
 import reachy2_monitoring as rm
+import prometheus_client as prc
 
 NODE_NAME = "pollen_kdl_kinematics_node"
 rm.configure_pyroscope(
@@ -52,6 +53,7 @@ class PollenKdlKinematics(LifecycleNode):
     def __init__(self):
         super().__init__(NODE_NAME)
         self.logger = self.get_logger()
+        prc.start_http_server(10003)
 
         self.urdf = self.retrieve_urdf()
 
@@ -76,6 +78,7 @@ class PollenKdlKinematics(LifecycleNode):
         self.ik_target_sub = {}
         self.averaged_pose = {}
         self.max_joint_vel = {}
+        self.prc_summaries = {}
 
         # High frequency QoS profile
         high_freq_qos_profile = QoSProfile(
@@ -89,6 +92,9 @@ class PollenKdlKinematics(LifecycleNode):
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
+            part_name = arm
+            self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
+                                                        f"Time spent during 'on_ik_target_pose' {part_name} callback")
 
             chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
@@ -284,6 +290,10 @@ class PollenKdlKinematics(LifecycleNode):
             )
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
+
+            part_name = "head"
+            self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
+                                                        f"Time spent during 'on_ik_target_pose' {part_name} callback")
             self.chain["head"] = chain
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
@@ -446,7 +456,7 @@ class PollenKdlKinematics(LifecycleNode):
                                        pyroscope_tags={"trace_name": trace_name},
                                        kind=rm.trace.SpanKind.SERVER,
                                        context=ctx,
-                                       ) as stack:
+                                       ) as stack, self.prc_summaries[name].time():
             stack.span.set_attributes(
                 {
                     "rpc.system": "ros_topic",
@@ -487,7 +497,7 @@ class PollenKdlKinematics(LifecycleNode):
                                        pyroscope_tags={"trace_name": trace_name},
                                        kind=rm.trace.SpanKind.SERVER,
                                        context=ctx,
-                                       ) as stack:
+                                       ) as stack, self.prc_summaries[name].time():
             M = ros_pose_to_matrix(msg.pose.pose)
 
             stack.span.set_attributes(
