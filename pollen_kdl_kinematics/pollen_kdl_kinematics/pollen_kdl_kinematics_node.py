@@ -311,12 +311,14 @@ class PollenKdlKinematics(LifecycleNode):
             current_pose=current_pose,
             urdf=self.urdf,
             reachy_model=reachy_config.model,
+            is_dvt = reachy_config.dvt,
         )
 
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
         self._marker_pub = self.create_publisher(MarkerArray, "markers_grasp_triplet", 10)
+        self.marker_array = MarkerArray()
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
@@ -404,6 +406,7 @@ class PollenKdlKinematics(LifecycleNode):
                 constrained_mode="unconstrained",
                 current_pose=current_pose
             )
+
             # # self.logger.info(M)
             # self.logger.info(f"solution {sol} {is_reachable}")
         else:
@@ -520,6 +523,27 @@ class PollenKdlKinematics(LifecycleNode):
             # self.logger.info(f"Constrained mode: {constrained_mode}")
             # self.logger.info(f"Order ID: {order_id}")
             # self.logger.info(f"Max d_theta: {d_theta_max}")
+            if name == "r_arm":
+                marker_id = 10
+            else:
+                marker_id = 30
+            if name == "r_arm":
+                self.marker_array = MarkerArray()
+            grasp_markers = get_grasp_marker(
+                header=Header(
+                    stamp=self.get_clock().now().to_msg(),
+                    frame_id="torso",
+                ),
+                grasp_pose=msg.pose.pose,
+                marker_id=marker_id,
+                tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
+                width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
+                score=1.0,
+                color=[1.0, 0.0, 0.0, 1.0],
+                lifetime=15.0,
+            )
+            self.marker_array.markers.extend(grasp_markers.markers)
+            # self._marker_pub.publish(marker_array_goal_pose)
 
             if "arm" in name:
                 current_joints = self.get_current_position(self.chain[name])
@@ -534,11 +558,48 @@ class PollenKdlKinematics(LifecycleNode):
                     M,
                     continuous_mode,
                     current_joints=current_joints,
-                    constrained_mode=constrained_mode,
+                    # constrained_mode=constrained_mode,
+                    constrained_mode = "unconstrained",
                     current_pose=current_pose,
-                    d_theta_max=d_theta_max,
+                    d_theta_max=0.05,
                     preferred_theta=preferred_theta,
                 )
+
+                # marker_array = MarkerArray()
+
+                goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
+                # self.logger.info(f"wrist pose: {self.control_ik.symbolic_ik_solver['r_arm'].wrist_position}")
+                # self.logger.info(f"goal pose: {goal_pose}")
+                pose = Pose()
+
+                # M = np.array(M).reshape((4, 4))
+
+                pose.position.x = goal_pose[0][0]
+                pose.position.y = goal_pose[0][1]
+                pose.position.z = goal_pose[0][2]
+
+                q = Rotation.from_euler("xyz", goal_pose[1]).as_quat()
+                pose.orientation.x = q[0]
+                pose.orientation.y = q[1]
+                pose.orientation.z = q[2]
+                pose.orientation.w = q[3]
+                grasp_markers = get_grasp_marker(
+                    header=Header(
+                        stamp=self.get_clock().now().to_msg(),
+                        frame_id="torso",
+                    ),
+                    grasp_pose=pose,
+                    marker_id=marker_id*2,
+                    tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
+                    width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
+                    score=1.0,
+                    color=[0.0, 1.0, 0.0, 1.0],
+                    lifetime=15.0,
+                )
+                self.marker_array.markers.extend(grasp_markers.markers)
+
+                if name == "l_arm":
+                    self._marker_pub.publish(self.marker_array)
                 stack.span.set_attributes(
                     {
                         "sol": sol.astype(float).tolist(),
