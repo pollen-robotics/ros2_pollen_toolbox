@@ -14,11 +14,12 @@ def gripper_test():
         print("Failed to connect to Reachy, exiting...")
         return
     print(reachy.r_arm)
-
+    reachy.turn_on()
     while True:
         print("Closing gripper")
         reachy.r_arm.gripper.close()
         reachy.l_arm.gripper.close()
+        
         # reachy.r_arm.gripper.set_opening(10)
         # reachy.l_arm.gripper.set_opening(10)
         print(f"r={reachy.r_arm.gripper}")
