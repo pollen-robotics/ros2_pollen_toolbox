@@ -558,10 +558,9 @@ class PollenKdlKinematics(LifecycleNode):
                     M,
                     continuous_mode,
                     current_joints=current_joints,
-                    # constrained_mode=constrained_mode,
-                    constrained_mode = "unconstrained",
+                    constrained_mode="unconstrained",
                     current_pose=current_pose,
-                    d_theta_max=0.05,
+                    d_theta_max=d_theta_max,
                     preferred_theta=preferred_theta,
                 )
 
