@@ -34,10 +34,15 @@ from pollen_msgs.msg import Gripper
 from pollen_msgs.srv import GetDynamicState
 
 import time
+import numpy as np
 
 from .forward_controller import ForwardControllersPool
 import reachy2_monitoring as rm
 import prometheus_client as pc
+
+# Gripper OPEN/CLOSE position (in rads)
+GRIPPER_OPEN_POSITION = np.deg2rad(130)
+GRIPPER_CLOSE_POSITION = np.deg2rad(-5)
 
 class TracedCommands:
     def __init__(self, traceparent="") -> None:
@@ -135,6 +140,7 @@ class DynamicStateRouterNode(Node):
             )
             for fc in self.forward_controllers.all()
         }
+        self.logger.error(f"list of self.forward_controllers.all() : {self.forward_controllers.all()}")
         self.gripper_pub = self.create_publisher(
             msg_type=Gripper,
             topic="/grippers/commands",
@@ -256,32 +262,40 @@ class DynamicStateRouterNode(Node):
             for joint, iv in commands.commands.items():
                 for interface, value in iv.items():
                     if joint.endswith("finger") and interface == "position":
-                        gripper_commands.commands[joint].update({interface: value})
+                        # gripper_commands.commands[joint].update({interface: value})
+                        open_pos = GRIPPER_OPEN_POSITION
+                        close_pos = GRIPPER_CLOSE_POSITION
+                        goal_pos = close_pos + value * (open_pos - close_pos)
+                        if open_pos < close_pos:
+                            goal_pos = np.clip(goal_pos, open_pos, close_pos)
+                        else:
+                            goal_pos = np.clip(goal_pos, close_pos, open_pos)
+                        regular_commands.commands[joint].update({interface: goal_pos})
                     elif interface in ("p_gain", "i_gain", "d_gain"):
                         pid_commands.commands[joint].update({interface: value})
                     else:
                         regular_commands.commands[joint].update({interface: value})
-            if gripper_commands:
-                self.handle_gripper_commands(gripper_commands)
+            # if gripper_commands:
+            #     self.handle_gripper_commands(gripper_commands)
             if pid_commands:
                 self.handle_pid_commands(pid_commands)
             if regular_commands:
                 self.handle_regular_commands(regular_commands)
 
-    def handle_gripper_commands(self, commands):
-        ctx = rm.ctx_from_traceparent(commands.traceparent)
-        with rm.PollenSpan(tracer=self.tracer,
-                                       trace_name="handle_gripper_commands",
-                                       context=ctx):
-            msg = Gripper()
-            for joint, iv in commands.commands.items():
-                for interface, value in iv.items():
-                    if interface == "position":
-                        msg.name.append(joint)
-                        msg.opening.append(value)
+    # def handle_gripper_commands(self, commands):
+    #     ctx = rm.ctx_from_traceparent(commands.traceparent)
+    #     with rm.PollenSpan(tracer=self.tracer,
+    #                                    trace_name="handle_gripper_commands",
+    #                                    context=ctx):
+    #         msg = Gripper()
+    #         for joint, iv in commands.commands.items():
+    #             for interface, value in iv.items():
+    #                 if interface == "position":
+    #                     msg.name.append(joint)
+    #                     msg.opening.append(value)
 
-            # TODO publish here to smartgripper node
-            self.gripper_pub.publish(msg)
+    #         # TODO publish here to smartgripper node
+    #         self.gripper_pub.publish(msg)
 
     def handle_pid_commands(self, commands):
         # TODO implement PollenSpan with TracedCommands
@@ -308,7 +322,7 @@ class DynamicStateRouterNode(Node):
     def handle_regular_commands(self, commands):
         ctx = rm.ctx_from_traceparent(commands.traceparent)
         with rm.PollenSpan(tracer=self.tracer,
-                                       trace_name="handle_gripper_commands",
+                                       trace_name="handle_regular_commands",
                                        context=ctx):
             # Group commands by forward controller
             to_pub = defaultdict(dict)
