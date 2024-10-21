@@ -60,6 +60,7 @@ class PollenKdlKinematics(LifecycleNode):
         prc.start_http_server(10003)
 
         self.urdf = self.retrieve_urdf()
+        # qu.save_urdf("reachy_v4.urdf", self.urdf)
 
         self.tracer = rm.tracer(NODE_NAME)
 
@@ -579,12 +580,15 @@ class PollenKdlKinematics(LifecycleNode):
                         ),
                     }
                 )
-                ####################################################
-                # QP SOLVER
+
+                ################################################
+                # QP CONTROLLER
+                # uncomment the 2 lines below
                 q = np.array(self.get_current_position(self.chain[name]))
                 sol = self.qpcontroller[name].solve(q, M)
-                ####################################################
-
+                err_lin, err_ang = qu.pose_err_norms(self.qpcontroller[name].fk(sol), Mdes=M)
+                self.logger.info(f"sol err  lin: {err_lin:.3f} |  ang: {err_ang:.3f}")
+                ###############################################
             else:
                 self.logger.error("IK target pose should be only for the arms")
                 raise ValueError("IK target pose should be only for the arms")
