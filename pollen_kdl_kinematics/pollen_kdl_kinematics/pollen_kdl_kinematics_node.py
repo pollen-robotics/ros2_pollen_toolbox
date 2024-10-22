@@ -100,11 +100,18 @@ class PollenKdlKinematics(LifecycleNode):
 
         self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
 
+        self.joints_targets = {}
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
             part_name = arm
             self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
                                                         f"Time spent during 'on_ik_target_pose' {part_name} callback")
+
+            self.joints_targets[arm] = self.create_publisher(
+                msg_type=Float64MultiArray,
+                topic=f"/target_joints_{arm}",
+                qos_profile=5,
+            )
 
             chain, fk_solver, ik_solver, jac_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
@@ -584,10 +591,10 @@ class PollenKdlKinematics(LifecycleNode):
                 ################################################
                 # QP CONTROLLER
                 # uncomment the 2 lines below
-                q = np.array(self.get_current_position(self.chain[name]))
-                sol = self.qpcontroller[name].solve(q, M)
-                err_lin, err_ang = qu.pose_err_norms(self.qpcontroller[name].fk(sol), Mdes=M)
-                self.logger.info(f"sol err  lin: {err_lin:.3f} |  ang: {err_ang:.3f}")
+                # q = np.array(self.get_current_position(self.chain[name]))
+                # sol = self.qpcontroller[name].solve(q, M)
+                # err_lin, err_ang = qu.pose_err_norms(self.qpcontroller[name].fk(sol), Mdes=M)
+                # self.logger.info(f"sol err  lin: {err_lin:.3f} |  ang: {err_ang:.3f}")
                 ###############################################
             else:
                 self.logger.error("IK target pose should be only for the arms")
@@ -595,7 +602,7 @@ class PollenKdlKinematics(LifecycleNode):
 
             msg = Float64MultiArray()
             msg.data = sol
-            forward_publisher.publish(msg)
+            # forward_publisher.publish(msg)
             reachability_msg = ReachabilityState()
             reachability_msg.header.stamp = self.get_clock().now().to_msg()
             reachability_msg.header.frame_id = "torso"
@@ -604,6 +611,10 @@ class PollenKdlKinematics(LifecycleNode):
             reachability_msg.order_id = order_id
             self.reachability_pub[name].publish(reachability_msg)
 
+
+            msg = Float64MultiArray()
+            msg.data = sol
+            self.joints_targets[name].publish(msg)
 
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
         '''

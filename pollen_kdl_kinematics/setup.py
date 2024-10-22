@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "pollen_kdl_kinematics = pollen_kdl_kinematics.pollen_kdl_kinematics_node:main",
+            "pollen_control = pollen_kdl_kinematics.pollen_control_node:main",
         ],
     },
 )
