@@ -166,7 +166,9 @@ class ListType(ValueType):
         return text.split()
 
     def equals(self, aValues, bValues):
-        return len(aValues) == len(bValues) and all(a == b for (a, b) in zip(aValues, bValues))  # noqa
+        return len(aValues) == len(bValues) and all(
+            a == b for (a, b) in zip(aValues, bValues)
+        )  # noqa
 
 
 class VectorType(ListType):
@@ -308,13 +310,17 @@ class Param(object):
         self.value_type = get_type(value_type)
         self.default = default
         if required:
-            assert default is None, "Default does not make sense for a required field"  # noqa
+            assert (
+                default is None
+            ), "Default does not make sense for a required field"  # noqa
         self.required = required
         self.is_aggregate = False
 
     def set_default(self, obj):
         if self.required:
-            raise Exception("Required {} not set in XML: {}".format(self.type, self.xml_var))  # noqa
+            raise Exception(
+                "Required {} not set in XML: {}".format(self.type, self.xml_var)
+            )  # noqa
         elif not skip_default:
             setattr(obj, self.var, self.default)
 
@@ -337,7 +343,9 @@ class Attribute(Param):
         # Do not set with default value if value is None
         if value is None:
             if self.required:
-                raise Exception("Required attribute not set in object: {}".format(self.var))  # noqa
+                raise Exception(
+                    "Required attribute not set in object: {}".format(self.var)
+                )  # noqa
             elif not skip_default:
                 value = self.default
         # Allow value type to handle None?
@@ -351,7 +359,9 @@ class Attribute(Param):
 
 
 class Element(Param):
-    def __init__(self, xml_var, value_type, required=True, default=None, var=None, is_raw=False):
+    def __init__(
+        self, xml_var, value_type, required=True, default=None, var=None, is_raw=False
+    ):
         Param.__init__(self, xml_var, value_type, required, default, var)
         self.type = "element"
         self.is_raw = is_raw
@@ -364,7 +374,9 @@ class Element(Param):
         value = getattr(obj, self.xml_var)
         if value is None:
             if self.required:
-                raise Exception("Required element not defined in object: {}".format(self.var))  # noqa
+                raise Exception(
+                    "Required element not defined in object: {}".format(self.var)
+                )  # noqa
             elif not skip_default:
                 value = self.default
         if value is not None:
@@ -382,7 +394,9 @@ class AggregateElement(Element):
     def __init__(self, xml_var, value_type, var=None, is_raw=False):
         if var is None:
             var = xml_var + "s"
-        Element.__init__(self, xml_var, value_type, required=False, var=var, is_raw=is_raw)
+        Element.__init__(
+            self, xml_var, value_type, required=False, var=var, is_raw=is_raw
+        )
         self.is_aggregate = True
 
     def add_from_xml(self, obj, node, path):
@@ -493,7 +507,9 @@ class Reflection(object):
                     attribute.set_from_string(obj, value)
                     if attribute.xml_var == id_var:
                         # Add id_var suffix to current path (do not copy so it propagates)
-                        path.suffix = "[@{}='{}']".format(id_var, attribute.get_value(obj))
+                        path.suffix = "[@{}='{}']".format(
+                            id_var, attribute.get_value(obj)
+                        )
                 except ParseError:
                     raise
                 except Exception as e:
@@ -515,7 +531,9 @@ class Reflection(object):
                         element.set_from_xml(obj, child, element_path)
                         unset_scalars.remove(tag)
                     else:
-                        on_error("Scalar element defined multiple times: {}".format(tag))  # noqa
+                        on_error(
+                            "Scalar element defined multiple times: {}".format(tag)
+                        )  # noqa
                 info.children.remove(child)
 
         # For unset attributes and scalar elements, we should not pass the attribute
@@ -540,10 +558,24 @@ class Reflection(object):
 
         if is_final:
             for xml_var in info.attributes:
+                if xml_var in [
+                    "iyx",
+                    "izx",
+                    "izy",
+                ]:  # ignore complete inertia matrix, may be used elsewhere
+                    continue
+
                 on_error('Unknown attribute "{}" in {}'.format(xml_var, path))
             for node in info.children:
+                # Dont know how to fix this painful warning real quick
+                if node.tag == "ros2_control":  # not meant for kdl ?
+                    continue
+                elif node.tag == "joint_properties":  # may be used by gazebo
+                    continue
                 on_error('Unknown tag "{}" in {}'.format(node.tag, path))
+
         # Allow children parsers to adopt this current path (if modified with id_var)
+
         return path
 
     def add_to_xml(self, obj, node):
@@ -583,7 +615,9 @@ class Object(YamlReflection):
     def to_xml(self):
         """Creates an overarching tag and adds its contents to the node"""
         tag = self.XML_REFL.tag
-        assert tag is not None, "Must define 'tag' in reflection to use this function"  # noqa
+        assert (
+            tag is not None
+        ), "Must define 'tag' in reflection to use this function"  # noqa
         doc = ET.Element(tag)
         self.write_xml(doc)
         return doc
