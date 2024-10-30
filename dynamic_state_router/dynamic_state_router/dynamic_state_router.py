@@ -262,7 +262,6 @@ class DynamicStateRouterNode(Node):
             for joint, iv in commands.commands.items():
                 for interface, value in iv.items():
                     if joint.endswith("finger") and interface == "position":
-                        # gripper_commands.commands[joint].update({interface: value})
                         open_pos = GRIPPER_OPEN_POSITION
                         close_pos = GRIPPER_CLOSE_POSITION
                         goal_pos = close_pos + value * (open_pos - close_pos)
@@ -281,21 +280,6 @@ class DynamicStateRouterNode(Node):
                 self.handle_pid_commands(pid_commands)
             if regular_commands:
                 self.handle_regular_commands(regular_commands)
-
-    # def handle_gripper_commands(self, commands):
-    #     ctx = rm.ctx_from_traceparent(commands.traceparent)
-    #     with rm.PollenSpan(tracer=self.tracer,
-    #                                    trace_name="handle_gripper_commands",
-    #                                    context=ctx):
-    #         msg = Gripper()
-    #         for joint, iv in commands.commands.items():
-    #             for interface, value in iv.items():
-    #                 if interface == "position":
-    #                     msg.name.append(joint)
-    #                     msg.opening.append(value)
-
-    #         # TODO publish here to smartgripper node
-    #         self.gripper_pub.publish(msg)
 
     def handle_pid_commands(self, commands):
         # TODO implement PollenSpan with TracedCommands
@@ -357,7 +341,6 @@ class DynamicStateRouterNode(Node):
 
                 for j, val in new_cmd.items():
                     self.joint_command[j][pub_interface] = val
-
                 self.fc_publisher[fc.name].publish(msg)
 
     # Internal ROS2 subscription
