@@ -560,12 +560,12 @@ class PollenKdlKinematics(LifecycleNode):
                     current_joints=current_joints,
                     constrained_mode="unconstrained",
                     current_pose=current_pose,
-                    d_theta_max=d_theta_max,
+                    d_theta_max=0.02,
                     preferred_theta=preferred_theta,
                 )
 
                 # marker_array = MarkerArray()
-
+                # self.logger.info(f" solution {sol} {is_reachable} name {name}")
                 goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
                 # self.logger.info(f"wrist pose: {self.control_ik.symbolic_ik_solver['r_arm'].wrist_position}")
                 # self.logger.info(f"goal pose: {goal_pose}")
