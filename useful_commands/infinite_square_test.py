@@ -10,6 +10,9 @@ from reachy2_sdk import ReachySDK
 
 from reachy2_sdk.parts.joints_based_part import JointsBasedPart
 
+# These are integer values between 0 and 100
+TORQUE_LIMIT=80
+SPEED_LIMIT=25
 
 
 def build_pose_matrix(x: float, y: float, z: float) -> npt.NDArray[np.float64]:
@@ -41,8 +44,8 @@ def set_speed_and_torque_limits(reachy, torque_limit=100, speed_limit=25) -> Non
 
     for part in reachy.info._enabled_parts.values():
         if issubclass(type(part), JointsBasedPart):
-            part.set_speed_limits(100)
-            part.set_torque_limits(100)
+            part.set_speed_limits(speed_limit)
+            part.set_torque_limits(torque_limit)
     time.sleep(0.5)
 
 def draw_square(reachy: ReachySDK) -> None:
@@ -145,13 +148,22 @@ if __name__ == "__main__":
     print("Turning on Reachy")
     reachy.turn_on()
     
-    set_speed_and_torque_limits(reachy, torque_limit=100, speed_limit=25)
+    set_speed_and_torque_limits(reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT)
 
     time.sleep(0.2)
     try :
         print("Move to point A, preparing infinite square drawing ...")
+        reachy.r_arm.gripper.close()
+        reachy.l_arm.gripper.close()
         goto_to_point_A(reachy)
 
+        reachy.r_arm.gripper.open()
+        reachy.l_arm.gripper.open()
+        time.sleep(2.0)
+
+        reachy.r_arm.gripper.close()
+        reachy.l_arm.gripper.close()
+        
         while True:
             print("Draw a square with the right arm ...")
             draw_square(reachy)
@@ -164,7 +176,9 @@ if __name__ == "__main__":
         print("Set to Zero pose ...")
         goto_ids = reachy.goto_posture("default", wait=True)
         # wait_for_pose_to_finish(goto_ids)
-
+        reachy.r_arm.gripper.open()
+        reachy.l_arm.gripper.open()
+        
         print("Turning off Reachy")
         reachy.turn_off()
 
