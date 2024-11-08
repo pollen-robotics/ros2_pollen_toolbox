@@ -39,6 +39,8 @@ from .pose_averager import PoseAverager
 import reachy2_monitoring as rm
 import prometheus_client as prc
 
+SHOW_RVIZ_MARKERS = False
+
 NODE_NAME = "pollen_kdl_kinematics_node"
 rm.configure_pyroscope(
     NODE_NAME,
@@ -537,23 +539,23 @@ class PollenKdlKinematics(LifecycleNode):
                 marker_id = 10
             else:
                 marker_id = 30
-            if name == "r_arm":
-                self.marker_array = MarkerArray()
-            grasp_markers = get_grasp_marker(
-                header=Header(
-                    stamp=self.get_clock().now().to_msg(),
-                    frame_id="torso",
-                ),
-                grasp_pose=msg.pose.pose,
-                marker_id=marker_id,
-                tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
-                width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
-                score=1.0,
-                color=[1.0, 0.0, 0.0, 1.0],
-                lifetime=15.0,
-            )
-            self.marker_array.markers.extend(grasp_markers.markers)
-            # self._marker_pub.publish(marker_array_goal_pose)
+            if SHOW_RVIZ_MARKERS:
+                if name == "r_arm":
+                    self.marker_array = MarkerArray()
+                grasp_markers = get_grasp_marker(
+                    header=Header(
+                        stamp=self.get_clock().now().to_msg(),
+                        frame_id="torso",
+                    ),
+                    grasp_pose=msg.pose.pose,
+                    marker_id=marker_id,
+                    tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
+                    width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
+                    score=1.0,
+                    color=[1.0, 0.0, 0.0, 1.0],
+                    lifetime=15.0,
+                )
+                self.marker_array.markers.extend(grasp_markers.markers)
 
             if "arm" in name:
                 current_joints = self.get_current_position(self.chain[name])
@@ -574,14 +576,11 @@ class PollenKdlKinematics(LifecycleNode):
                     preferred_theta=preferred_theta,
                 )
 
-                # marker_array = MarkerArray()
                 # self.logger.info(f" solution {sol} {is_reachable} name {name}")
                 goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
                 # self.logger.info(f"wrist pose: {self.control_ik.symbolic_ik_solver['r_arm'].wrist_position}")
                 # self.logger.info(f"goal pose: {goal_pose}")
                 pose = Pose()
-
-                # M = np.array(M).reshape((4, 4))
 
                 pose.position.x = goal_pose[0][0]
                 pose.position.y = goal_pose[0][1]
@@ -592,23 +591,25 @@ class PollenKdlKinematics(LifecycleNode):
                 pose.orientation.y = q[1]
                 pose.orientation.z = q[2]
                 pose.orientation.w = q[3]
-                grasp_markers = get_grasp_marker(
-                    header=Header(
-                        stamp=self.get_clock().now().to_msg(),
-                        frame_id="torso",
-                    ),
-                    grasp_pose=pose,
-                    marker_id=marker_id*2,
-                    tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
-                    width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
-                    score=1.0,
-                    color=[0.0, 1.0, 0.0, 1.0],
-                    lifetime=15.0,
-                )
-                self.marker_array.markers.extend(grasp_markers.markers)
 
-                if name == "l_arm":
-                    self._marker_pub.publish(self.marker_array)
+                if SHOW_RVIZ_MARKERS:
+                    grasp_markers = get_grasp_marker(
+                        header=Header(
+                            stamp=self.get_clock().now().to_msg(),
+                            frame_id="torso",
+                        ),
+                        grasp_pose=pose,
+                        marker_id=marker_id*2,
+                        tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
+                        width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
+                        score=1.0,
+                        color=[0.0, 1.0, 0.0, 1.0],
+                        lifetime=15.0,
+                    )
+                    self.marker_array.markers.extend(grasp_markers.markers)
+                    if name == "l_arm":
+                        self._marker_pub.publish(self.marker_array)
+
                 stack.span.set_attributes(
                     {
                         "sol": sol.astype(float).tolist(),
