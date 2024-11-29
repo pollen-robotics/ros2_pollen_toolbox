@@ -12,6 +12,8 @@ from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
                        ReliabilityPolicy)
+from rcl_interfaces.msg import SetParametersResult
+from rclpy.parameter import Parameter
 from reachy2_symbolic_ik.control_ik import ControlIK
 
 from reachy_utils.config import ReachyConfig
@@ -64,6 +66,7 @@ class PollenKdlKinematics(LifecycleNode):
         # Listen to /joint_state to get current position
         # used by averaged_target_pose
         self._current_pos = {}
+        self._current_velocity = {}
         self.joint_state_sub = self.create_subscription(
             msg_type=JointState,
             topic="/joint_states",
@@ -91,6 +94,15 @@ class PollenKdlKinematics(LifecycleNode):
         )
 
         self.orbita3D_max_angle = np.deg2rad(42.5)  # 43.5 is too much
+        self.control_period = 1/120.0
+        self.max_acceleration = 5000.0
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("max_acceleration", 5000.0),
+            ],
+        )
+        self.add_on_set_parameters_callback(self.parameters_callback)
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
@@ -331,6 +343,17 @@ class PollenKdlKinematics(LifecycleNode):
 
         self._marker_pub = self.create_publisher(MarkerArray, "markers_grasp_triplet", 10)
         self.marker_array = MarkerArray()
+        
+    def parameters_callback(self, params) -> SetParametersResult:
+        """When a ROS parameter is changed, this method will be called to verify the change and accept/deny it."""
+        success = False
+        for param in params:
+            if param.type_ in [Parameter.Type.DOUBLE, Parameter.Type.INTEGER]:
+                if param.name == "max_acceleration":
+                    self.max_acceleration = param.value
+                    success = True
+
+        return SetParametersResult(successful=success)
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
@@ -558,7 +581,10 @@ class PollenKdlKinematics(LifecycleNode):
                 self.marker_array.markers.extend(grasp_markers.markers)
 
             if "arm" in name:
+                # print _current_velocity ?
                 current_joints = self.get_current_position(self.chain[name])
+                current_speeds = self.get_current_speed(self.chain[name])
+                
                 error, current_pose = forward_kinematics(
                     self.fk_solver[name],
                     current_joints,
@@ -574,6 +600,9 @@ class PollenKdlKinematics(LifecycleNode):
                     current_pose=current_pose,
                     d_theta_max=0.02,
                     preferred_theta=preferred_theta,
+                    current_speeds=current_speeds,
+                    dt=self.control_period,
+                    max_acceleration=self.max_acceleration,
                 )
 
                 # self.logger.info(f" solution {sol} {is_reachable} name {name}")
@@ -734,15 +763,20 @@ class PollenKdlKinematics(LifecycleNode):
     def get_current_position(self, chain) -> List[float]:
         joints = self.get_chain_joints_name(chain)
         return [self._current_pos[j] for j in joints]
+    
+    def get_current_speed(self, chain) -> List[float]:
+        joints = self.get_chain_joints_name(chain)
+        return [self._current_velocity[j] for j in joints]
 
     def wait_for_joint_state(self):
         while not self.joint_state_ready.is_set():
             self.logger.info("Waiting for /joint_states...")
             rclpy.spin_once(self)
-
+        
     def on_joint_state(self, msg: JointState):
-        for j, pos in zip(msg.name, msg.position):
+        for j, pos, vel in zip(msg.name, msg.position, msg.velocity):
             self._current_pos[j] = pos
+            self._current_velocity[j] = vel 
 
         self.joint_state_ready.set()
 
