@@ -103,6 +103,8 @@ class PollenKdlKinematics(LifecycleNode):
             ],
         )
         self.add_on_set_parameters_callback(self.parameters_callback)
+        self.last_ik_msg = {}
+        self.forward_position_pubs = {}
 
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
@@ -110,9 +112,10 @@ class PollenKdlKinematics(LifecycleNode):
             self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
                                                         f"Time spent during 'on_ik_target_pose' {part_name} callback")
 
+            self.last_ik_msg[arm] = (None, time.time())
             chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
 
-            # We automatically loads the kinematics corresponding to the config
+            # We automatically load the kinematics corresponding to the config
             if chain.getNrOfJoints():
                 self.logger.info(f'Found kinematics chain for "{arm}"!')
 
@@ -141,6 +144,7 @@ class PollenKdlKinematics(LifecycleNode):
                     topic=f"/{arm}_forward_position_controller/commands",
                     qos_profile=5,
                 )
+                self.forward_position_pubs[arm] = forward_position_pub
 
                 self.reachability_pub[arm] = self.create_publisher(
                     msg_type=ReachabilityState,
@@ -175,9 +179,8 @@ class PollenKdlKinematics(LifecycleNode):
                     topic=f"/{arm}/ik_target_pose",
                     qos_profile=high_freq_qos_profile,
                     callback=partial(
-                        self.on_ik_target_pose,
-                        name=arm,
-                        forward_publisher=forward_position_pub,
+                        self.store_last_ik_msg,
+                        arm=arm,
                     ),
                 )
                 self.logger.info(f'Adding subscription on "{self.ik_target_sub[arm].topic}"...')
@@ -344,6 +347,10 @@ class PollenKdlKinematics(LifecycleNode):
         self._marker_pub = self.create_publisher(MarkerArray, "markers_grasp_triplet", 10)
         self.marker_array = MarkerArray()
         
+        
+
+        self.create_timer(1 / 120.0, self.execute_last_ik_calls)
+        
     def parameters_callback(self, params) -> SetParametersResult:
         """When a ROS parameter is changed, this method will be called to verify the change and accept/deny it."""
         success = False
@@ -359,6 +366,17 @@ class PollenKdlKinematics(LifecycleNode):
         # Dummy state to minimize impact on current behavior
         self.logger.info("Configuring state has been called, going into inactive to release event trigger")
         return TransitionCallbackReturn.SUCCESS
+    
+    def store_last_ik_msg(self, msg, arm):
+        self.logger.info(f"Storing last IK msg for {arm}")
+        self.last_ik_msg[arm] = (msg, time.time())
+    
+    def execute_last_ik_calls(self):
+        for arm in ["r_arm", "l_arm"]:
+            if self.last_ik_msg[arm][0] is not None and (abs(time.time() - self.last_ik_msg[arm][1]) < 0.2):
+                # Not spamming old messages
+                self.logger.info(f"Executing last IK msg for {arm}")
+                self.on_ik_target_pose(self.last_ik_msg[arm][0], arm, self.forward_position_pubs[arm])
 
     def forward_kinematics_srv(
         self,
