@@ -323,7 +323,7 @@ class PollenKdlKinematics(LifecycleNode):
             current_pose=current_pose,
             urdf=self.urdf,
             reachy_model=reachy_config.model,
-            is_dvt = reachy_config.dvt,
+            is_dvt = reachy_config.dvt or reachy_config.pvt,
         )
 
         self.logger.info(f"Kinematics node ready!")
