@@ -331,7 +331,7 @@ class PollenKdlKinematics(LifecycleNode):
         )
         current_pose = [current_pose_r, current_pose_l]
 
-        reachy_config = ReachyConfig()
+        reachy_config = ReachyConfig(no_print=True)
 
         self.control_ik = ControlIK(
             logger=self.logger,
