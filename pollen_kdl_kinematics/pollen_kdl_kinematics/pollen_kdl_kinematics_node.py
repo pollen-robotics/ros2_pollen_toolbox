@@ -5,26 +5,28 @@ from threading import Event
 from typing import List
 
 import numpy as np
+import prometheus_client as prc
 import rclpy
+import reachy2_monitoring as rm
 from geometry_msgs.msg import Pose, PoseStamped
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
-from rclpy.qos import (HistoryPolicy, QoSDurabilityPolicy, QoSProfile,
-                       ReliabilityPolicy)
+from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.control_ik import ControlIK
-
-from reachy_utils.config import ReachyConfig
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_symbolic_ik.utils import (allow_multiturn,
-                                       get_best_continuous_theta,
-                                       get_best_continuous_theta2,
-                                       get_best_discrete_theta,
-                                       get_euler_from_homogeneous_matrix,
-                                       limit_orbita3d_joints,
-                                       limit_orbita3d_joints_wrist,
-                                       limit_theta_to_interval,
-                                       get_best_theta_to_current_joints,)
+from reachy2_symbolic_ik.utils import (
+    allow_multiturn,
+    get_best_continuous_theta,
+    get_best_continuous_theta2,
+    get_best_discrete_theta,
+    get_best_theta_to_current_joints,
+    get_euler_from_homogeneous_matrix,
+    limit_orbita3d_joints,
+    limit_orbita3d_joints_wrist,
+    limit_theta_to_interval,
+)
+from reachy_config import ReachyConfig
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, Header, String
@@ -32,12 +34,13 @@ from visualization_msgs.msg import MarkerArray
 
 from pollen_grasping_utils.utils import get_grasp_marker
 
-from .kdl_kinematics import (forward_kinematics, generate_solver,
-                             inverse_kinematics, ros_pose_to_matrix)
+from .kdl_kinematics import (
+    forward_kinematics,
+    generate_solver,
+    inverse_kinematics,
+    ros_pose_to_matrix,
+)
 from .pose_averager import PoseAverager
-
-import reachy2_monitoring as rm
-import prometheus_client as prc
 
 SHOW_RVIZ_MARKERS = False
 
@@ -95,10 +98,14 @@ class PollenKdlKinematics(LifecycleNode):
         for prefix in ("l", "r"):
             arm = f"{prefix}_arm"
             part_name = arm
-            self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
-                                                        f"Time spent during 'on_ik_target_pose' {part_name} callback")
+            self.prc_summaries[part_name] = prc.Summary(
+                f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
+                f"Time spent during 'on_ik_target_pose' {part_name} callback",
+            )
 
-            chain, fk_solver, ik_solver = generate_solver(self.urdf, "torso", f"{prefix}_arm_tip")
+            chain, fk_solver, ik_solver = generate_solver(
+                self.urdf, "torso", f"{prefix}_arm_tip"
+            )
 
             # We automatically loads the kinematics corresponding to the config
             if chain.getNrOfJoints():
@@ -156,7 +163,9 @@ class PollenKdlKinematics(LifecycleNode):
                         forward_publisher=forward_position_pub,
                     ),
                 )
-                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
+                self.logger.info(
+                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
+                )
 
                 self.ik_target_sub[arm] = self.create_subscription(
                     msg_type=IKRequest,
@@ -168,7 +177,9 @@ class PollenKdlKinematics(LifecycleNode):
                         forward_publisher=forward_position_pub,
                     ),
                 )
-                self.logger.info(f'Adding subscription on "{self.ik_target_sub[arm].topic}"...')
+                self.logger.info(
+                    f'Adding subscription on "{self.ik_target_sub[arm].topic}"...'
+                )
 
                 self.averaged_target_sub[arm] = self.create_subscription(
                     msg_type=PoseStamped,
@@ -183,7 +194,9 @@ class PollenKdlKinematics(LifecycleNode):
                     ),
                 )
                 self.averaged_pose[arm] = PoseAverager(window_length=1)
-                self.default_max_joint_vel = 0.6  # Angular difference between current joint and requested joint.
+                self.default_max_joint_vel = (
+                    0.6  # Angular difference between current joint and requested joint.
+                )
                 self.max_joint_vel[arm] = np.array(
                     [
                         self.default_max_joint_vel,
@@ -195,7 +208,9 @@ class PollenKdlKinematics(LifecycleNode):
                         self.default_max_joint_vel,
                     ]
                 )
-                self.logger.info(f'Adding subscription on "{self.target_sub[arm].topic}"...')
+                self.logger.info(
+                    f'Adding subscription on "{self.target_sub[arm].topic}"...'
+                )
 
                 self.chain[arm] = chain
                 self.fk_solver[arm] = fk_solver
@@ -292,10 +307,11 @@ class PollenKdlKinematics(LifecycleNode):
             )
             self.logger.info(f'Adding subscription on "{sub.topic}"...')
 
-
             part_name = "head"
-            self.prc_summaries[part_name] = prc.Summary(f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
-                                                        f"Time spent during 'on_ik_target_pose' {part_name} callback")
+            self.prc_summaries[part_name] = prc.Summary(
+                f"pollen_kdl_kinematics__on_ik_target_pose_{part_name}_time",
+                f"Time spent during 'on_ik_target_pose' {part_name} callback",
+            )
             self.chain["head"] = chain
             self.fk_solver["head"] = fk_solver
             self.ik_solver["head"] = ik_solver
@@ -304,15 +320,15 @@ class PollenKdlKinematics(LifecycleNode):
         current_joints_l = self.get_current_position(self.chain["l_arm"])
         current_joints = [current_joints_r, current_joints_l]
         error, current_pose_r = forward_kinematics(
-                self.fk_solver["r_arm"],
-                current_joints_r,
-                self.chain["r_arm"].getNrOfJoints(),
-            )
+            self.fk_solver["r_arm"],
+            current_joints_r,
+            self.chain["r_arm"].getNrOfJoints(),
+        )
         error, current_pose_l = forward_kinematics(
-                self.fk_solver["l_arm"],
-                current_joints_l,
-                self.chain["l_arm"].getNrOfJoints(),
-            )
+            self.fk_solver["l_arm"],
+            current_joints_l,
+            self.chain["l_arm"].getNrOfJoints(),
+        )
         current_pose = [current_pose_r, current_pose_l]
 
         reachy_config = ReachyConfig()
@@ -323,18 +339,22 @@ class PollenKdlKinematics(LifecycleNode):
             current_pose=current_pose,
             urdf=self.urdf,
             reachy_model=reachy_config.model,
-            is_dvt = reachy_config.dvt or reachy_config.pvt,
+            is_dvt=reachy_config.dvt or reachy_config.pvt,
         )
 
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
-        self._marker_pub = self.create_publisher(MarkerArray, "markers_grasp_triplet", 10)
+        self._marker_pub = self.create_publisher(
+            MarkerArray, "markers_grasp_triplet", 10
+        )
         self.marker_array = MarkerArray()
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
-        self.logger.info("Configuring state has been called, going into inactive to release event trigger")
+        self.logger.info(
+            "Configuring state has been called, going into inactive to release event trigger"
+        )
         return TransitionCallbackReturn.SUCCESS
 
     def forward_kinematics_srv(
@@ -344,7 +364,9 @@ class PollenKdlKinematics(LifecycleNode):
         name,
     ) -> GetForwardKinematics.Response:
         try:
-            joint_position = self.check_position(request.joint_position, self.chain[name])
+            joint_position = self.check_position(
+                request.joint_position, self.chain[name]
+            )
         except KeyError:
             response.success = False
             return response
@@ -416,7 +438,7 @@ class PollenKdlKinematics(LifecycleNode):
                 "discrete",
                 current_joints=current_joints,
                 constrained_mode="unconstrained",
-                current_pose=current_pose
+                current_pose=current_pose,
             )
 
             # # self.logger.info(M)
@@ -448,20 +470,21 @@ class PollenKdlKinematics(LifecycleNode):
         ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose_neck"
-        rm.travel_span(f"{trace_name}_msg_travel",
-                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
-                                   tracer=self.tracer,
-                                   context=ctx,
-                                   )
+        rm.travel_span(
+            f"{trace_name}_msg_travel",
+            start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+            tracer=self.tracer,
+            context=ctx,
+        )
 
-
-        with rm.PollenSpan(tracer=self.tracer,
-                                       trace_name=trace_name,
-                                       with_pyroscope=True,
-                                       pyroscope_tags={"trace_name": trace_name},
-                                       kind=rm.trace.SpanKind.SERVER,
-                                       context=ctx,
-                                       ) as stack, self.prc_summaries[name].time():
+        with rm.PollenSpan(
+            tracer=self.tracer,
+            trace_name=trace_name,
+            with_pyroscope=True,
+            pyroscope_tags={"trace_name": trace_name},
+            kind=rm.trace.SpanKind.SERVER,
+            context=ctx,
+        ) as stack, self.prc_summaries[name].time():
             stack.span.set_attributes(
                 {
                     "rpc.system": "ros_topic",
@@ -472,11 +495,11 @@ class PollenKdlKinematics(LifecycleNode):
             )
 
             error, sol = inverse_kinematics(
-                    self.ik_solver[name],
-                    q0=q0,
-                    target_pose=M,
-                    nb_joints=self.chain[name].getNrOfJoints(),
-                )
+                self.ik_solver[name],
+                q0=q0,
+                target_pose=M,
+                nb_joints=self.chain[name].getNrOfJoints(),
+            )
             sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
             stack.span.set_attributes({"sol": sol, "error": error})
 
@@ -489,20 +512,21 @@ class PollenKdlKinematics(LifecycleNode):
         ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose"
-        rm.travel_span(f"{trace_name}_msg_travel",
-                                   start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
-                                   tracer=self.tracer,
-                                   context=ctx,
-                                   )
+        rm.travel_span(
+            f"{trace_name}_msg_travel",
+            start_time=rclpy.time.Time.from_msg(msg.pose.header.stamp).nanoseconds,
+            tracer=self.tracer,
+            context=ctx,
+        )
 
-
-        with rm.PollenSpan(tracer=self.tracer,
-                                       trace_name=trace_name,
-                                       with_pyroscope=True,
-                                       pyroscope_tags={"trace_name": trace_name},
-                                       kind=rm.trace.SpanKind.SERVER,
-                                       context=ctx,
-                                       ) as stack, self.prc_summaries[name].time():
+        with rm.PollenSpan(
+            tracer=self.tracer,
+            trace_name=trace_name,
+            with_pyroscope=True,
+            pyroscope_tags={"trace_name": trace_name},
+            kind=rm.trace.SpanKind.SERVER,
+            context=ctx,
+        ) as stack, self.prc_summaries[name].time():
             M = ros_pose_to_matrix(msg.pose.pose)
 
             stack.span.set_attributes(
@@ -599,7 +623,7 @@ class PollenKdlKinematics(LifecycleNode):
                             frame_id="torso",
                         ),
                         grasp_pose=pose,
-                        marker_id=marker_id*2,
+                        marker_id=marker_id * 2,
                         tip_length=0.1,  # GRASP_MARKER_TIP_LEN, taken from simple_grasp_pose.py
                         width=40,  # GRASP_MARKER_WIDTH, taken from simple_grasp_pose.py
                         score=1.0,
@@ -639,11 +663,10 @@ class PollenKdlKinematics(LifecycleNode):
             reachability_msg.order_id = order_id
             self.reachability_pub[name].publish(reachability_msg)
 
-
     def on_target_pose(self, msg: PoseStamped, name, q0, forward_publisher):
-        '''
-            # LEGACY (for old ros bags)
-        '''
+        """
+        # LEGACY (for old ros bags)
+        """
         M = ros_pose_to_matrix(msg.pose)
 
         if "arm" in name:
@@ -659,7 +682,7 @@ class PollenKdlKinematics(LifecycleNode):
                 "continuous",
                 current_joints=current_joints,
                 constrained_mode="low_elbow",  # "unconstrained"
-                current_pose=current_pose
+                current_pose=current_pose,
             )
         else:
             error, sol = inverse_kinematics(
@@ -707,7 +730,7 @@ class PollenKdlKinematics(LifecycleNode):
                 "continuous",
                 current_joints=current_joints,
                 interval_limit=[-4 * np.pi / 5, 0],
-                current_pose=current_pose
+                current_pose=current_pose,
             )
         else:
             error, sol = inverse_kinematics(
@@ -779,7 +802,9 @@ class PollenKdlKinematics(LifecycleNode):
             joints = [pos[j] for j in self.get_chain_joints_name(chain)]
             return joints
         except KeyError:
-            self.logger.warning(f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})")
+            self.logger.warning(
+                f"Incorrect joints found ({js.name} vs {self.get_chain_joints_name(chain)})"
+            )
             raise
 
     def get_chain_joints_name(self, chain):
