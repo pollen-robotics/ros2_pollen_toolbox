@@ -3,6 +3,13 @@ float64 duration
 
 # Goal state of the joints. In normal use, this is the last command that will be sent to the robot. Non 0 velocities can be used to link gotos requests without stopping at each goal.
 sensor_msgs/JointState goal_joints
+
+# Goal pose for cartesian interpolation request
+geometry_msgs/PoseStamped goal_pose
+
+# 2 spaces are supported: "cartesian" and joints"
+string interpolation_space
+
 # As of writting 2 modes are supported: "linear" and "minjerk".
 string mode
 

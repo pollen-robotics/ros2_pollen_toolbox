@@ -14,6 +14,9 @@ from rclpy.callback_groups import (
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from pollen_msgs.msg import IKRequest
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
 from .interpolation import InterpolationMode
 
@@ -107,6 +110,25 @@ class GotoActionServer(Node):
             callback_group=shared_callback_group,
         )
 
+        # self.forward_sub = self.create_client(
+        #     srv_type=GetForwardKinematics,
+        #     srv_name=f"/{name_prefix}/forward_kinematics",
+        # )
+        # self.forward_sub.wait_for_service()
+
+        high_freq_qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
+            history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
+            depth=1,  # Minimal depth, for the latest message
+            # Other QoS settings can be adjusted as needed
+        )
+
+        self.arm_target_pose_pub = self.create_publisher(
+            msg_type=IKRequest,
+            topic=f"/{name_prefix}/ik_target_pose",
+            qos_profile=high_freq_qos_profile,
+        )
+
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
         self.get_logger().info("Goto action server init.")
@@ -123,18 +145,24 @@ class GotoActionServer(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().debug(f"Received goal request: {goal_request.request}")
+        self.get_logger().error(f"Received goal request: {goal_request.request}")
         request = goal_request.request  # This is of type pollen_msgs/GotoRequest
         duration = request.duration
         if duration <= 0.001:
             self.get_logger().error(f"Invalid duration {duration}")
             return GoalResponse.REJECT
 
-        elif len(request.goal_joints.name) < 1 or (
+        elif request.interpolation_space == "joints" and (len(request.goal_joints.name) < 1 or (
             len(request.goal_joints.name) != len(request.goal_joints.position)
-        ):
+        )):
             self.get_logger().error(
                 f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
+            )
+            return GoalResponse.REJECT
+
+        elif request.interpolation_space == "cartesian":
+            self.get_logger().error(
+                "GOT CARTESIAN SPACE REQUEST, NOT IMPLEMENTED YET"
             )
             return GoalResponse.REJECT
 
@@ -176,7 +204,7 @@ class GotoActionServer(Node):
             goal_acc,
         )
 
-    def prepare_data(self, goto_request):
+    def prepare_data_joint_space(self, goto_request):
         # goto_request is of type pollen_msgs/GotoRequest
         goal_pos_dict = {}
         goal_vel_dict = {}
@@ -187,6 +215,7 @@ class GotoActionServer(Node):
         start_acc_dict = {}
 
         for it, joint_name in enumerate(goto_request.goal_joints.name):
+            self.get_logger().error(f"Joint {joint_name} found in joint_names")
             goal_pos_dict[joint_name] = goto_request.goal_joints.position[it]
 
             start_pos_dict[joint_name] = self.joint_state_handler.joint_state[
@@ -215,6 +244,25 @@ class GotoActionServer(Node):
             start_acc_dict,
             goal_acc_dict,
         )
+
+    # def prepare_data_cartesian_space(self, goto_request):
+    #     js = JointState()
+    #     for joint_name in goto_request.goal_joints.name:
+    #         js.name.extend(joint_name)
+    #         js.position.extend = self.joint_state_handler.joint_state[
+    #             joint_name
+    #         ]["position"]
+
+    #     req = GetForwardKinematics.Request()
+    #     req.joint_position = js
+
+    #     resp = self.forward_sub.call(req)
+
+    #     if resp.success:
+    #         return (
+    #             resp.pose,
+    #             goto_request.goal_pose,
+    #         )
 
     def cmd_pub(self, joints, points):
         cmd_msg = DynamicJointState()
@@ -308,30 +356,20 @@ class GotoActionServer(Node):
         else:
             return CancelResponse.REJECT
 
-    def execute_callback(self, goal_handle):
-        """Execute a goal."""
+    def callback_for_joint_space(self, goal_handle, interpolation_mode):
         start_time = time.time()
+
+        goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
+        duration = goto_request.duration
+        sampling_freq = goto_request.sampling_freq
+        safety_on = goto_request.safety_on
+
         # try:
         self.get_logger().info(f"Executing goal...")
         ret = ""
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
         )
-        goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
-        duration = goto_request.duration
-        mode = goto_request.mode
-        sampling_freq = goto_request.sampling_freq
-        safety_on = goto_request.safety_on
-
-        if mode == "linear":
-            interpolation_mode = InterpolationMode.LINEAR
-        elif mode == "minimum_jerk":
-            interpolation_mode = InterpolationMode.MINIMUM_JERK
-        else:
-            self.get_logger().warn(
-                f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
-            )
-            interpolation_mode = InterpolationMode.MINIMUM_JERK
 
         (
             start_pos_dict,
@@ -340,7 +378,8 @@ class GotoActionServer(Node):
             goal_vel_dict,
             start_acc_dict,
             goal_acc_dict,
-        ) = self.prepare_data(goto_request)
+        ) = self.prepare_data_joint_space(goto_request)
+
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data"
         )
@@ -349,7 +388,7 @@ class GotoActionServer(Node):
         )
 
         traj_func = self.compute_traj(
-            duration,
+            goto_request.duration,
             np.array(list(start_pos_dict.values())),
             np.array(list(goal_pos_dict.values())),
             np.array(list(start_vel_dict.values())),
@@ -358,10 +397,13 @@ class GotoActionServer(Node):
             np.array(list(goal_acc_dict.values())),
             interpolation_mode=interpolation_mode,
         )
+
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
         )
+
         joints = start_pos_dict.keys()
+
         ret = self.goto_time(
             traj_func,
             joints,
@@ -373,6 +415,60 @@ class GotoActionServer(Node):
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
         )
 
+        return ret
+
+    def callback_for_cartesian_space(self, goal_handle, interpolation_mode):
+        start_time = time.time()
+
+        goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
+        duration = goto_request.duration
+        sampling_freq = goto_request.sampling_freq
+        safety_on = goto_request.safety_on
+
+        # try:
+        self.get_logger().info(f"Executing goal...")
+        ret = ""
+        self.get_logger().debug(
+            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
+        )
+
+        pass
+
+    def execute_callback(self, goal_handle):
+        """Execute a goal."""
+        goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
+        interpolation_space = goto_request.interpolation_space
+        mode = goto_request.mode
+
+        if interpolation_space == "joints":
+            if mode == "linear":
+                interpolation_mode = InterpolationMode.LINEAR
+            elif mode == "minimum_jerk":
+                interpolation_mode = InterpolationMode.MINIMUM_JERK
+            else:
+                self.get_logger().warn(
+                    f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
+                )
+                interpolation_mode = InterpolationMode.MINIMUM_JERK
+        elif interpolation_space == "cartesian":
+            if mode == "linear":
+                interpolation_mode = InterpolationMode.LINEAR
+            elif mode == "minimum_jerk":
+                interpolation_mode = InterpolationMode.MINIMUM_JERK
+            else:
+                self.get_logger().warn(
+                    f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
+                )
+                interpolation_mode = InterpolationMode.MINIMUM_JERK
+        else:
+            self.get_logger().warn(
+                    f"Unknown interpolation space {interpolation_space} defaulting to joints"
+                )
+            interpolation_mode = InterpolationMode.MINIMUM_JERK
+
+        if interpolation_space == "joints":
+            ret = self.callback_for_joint_space(goal_handle, interpolation_mode)
+
         if ret == "finished":
             goal_handle.succeed()
 
@@ -381,9 +477,6 @@ class GotoActionServer(Node):
         result.result.status = ret
         self.get_logger().debug(f"Returning result {result}")
 
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end"
-        )
         self.execution_ongoing.set()
         return result
 
