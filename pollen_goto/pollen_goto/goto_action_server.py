@@ -186,7 +186,7 @@ class GotoActionServer(Node):
     def check(self):
         pass
 
-    def compute_traj(
+    def compute_traj_joint_space(
         self,
         duration,
         starting_pos,
@@ -205,6 +205,19 @@ class GotoActionServer(Node):
             starting_acc,
             goal_vel,
             goal_acc,
+        )
+
+    def compute_traj_cartesian_space(
+            self,
+            duration,
+            starting_pose,
+            goal_pose,
+            interpolation_mode: InterpolationMode = InterpolationMode.MINIMUM_JERK,
+    ):
+        return interpolation_mode(
+            starting_pose,
+            goal_pose,
+            duration,
         )
 
     def prepare_data_joint_space(self, goto_request):
@@ -248,24 +261,24 @@ class GotoActionServer(Node):
             goal_acc_dict,
         )
 
-    # def prepare_data_cartesian_space(self, goto_request):
-    #     js = JointState()
-    #     for joint_name in goto_request.goal_joints.name:
-    #         js.name.extend(joint_name)
-    #         js.position.extend = self.joint_state_handler.joint_state[
-    #             joint_name
-    #         ]["position"]
+    def prepare_data_cartesian_space(self, goto_request):
+        js = JointState()
+        for joint_name in goto_request.goal_joints.name:
+            js.name.extend(joint_name)
+            js.position.extend = self.joint_state_handler.joint_state[
+                joint_name
+            ]["position"]
 
-    #     req = GetForwardKinematics.Request()
-    #     req.joint_position = js
+        req = GetForwardKinematics.Request()
+        req.joint_position = js
 
-    #     resp = self.forward_sub.call(req)
+        resp = self.forward_sub.call(req)
 
-    #     if resp.success:
-    #         return (
-    #             resp.pose,
-    #             goto_request.goal_pose,
-    #         )
+        if resp.success:
+            return (
+                resp.pose,
+                goto_request.goal_pose,
+            )
 
     def cmd_pub(self, joints, points):
         cmd_msg = DynamicJointState()
@@ -390,7 +403,7 @@ class GotoActionServer(Node):
             f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
         )
 
-        traj_func = self.compute_traj(
+        traj_func = self.compute_traj_joint_space(
             goto_request.duration,
             np.array(list(start_pos_dict.values())),
             np.array(list(goal_pos_dict.values())),
@@ -433,6 +446,22 @@ class GotoActionServer(Node):
         ret = ""
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
+        )
+
+        (
+            start_pose,
+            goal_pose,
+        ) = self.prepare_data_cartesian_space(goto_request)
+
+        traj_func = self.compute_traj_cartesian_space(
+            goto_request.duration,
+            np.array(list(start_pos_dict.values())),
+            np.array(list(goal_pos_dict.values())),
+            np.array(list(start_vel_dict.values())),
+            np.array(list(goal_vel_dict.values())),
+            np.array(list(start_acc_dict.values())),
+            np.array(list(goal_acc_dict.values())),
+            interpolation_mode=interpolation_mode,
         )
 
         pass
