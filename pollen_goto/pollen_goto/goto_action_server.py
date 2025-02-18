@@ -18,7 +18,7 @@ from pollen_msgs.msg import IKRequest
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
-from .interpolation import InterpolationMode
+from .interpolation import JointSpaceInterpolationMode, CartesianSpaceInterpolationMode, InterpolationFunc
 
 
 class CentralJointStateHandler(Node):
@@ -195,7 +195,7 @@ class GotoActionServer(Node):
         goal_vel=None,
         starting_acc=None,
         goal_acc=None,
-        interpolation_mode: InterpolationMode = InterpolationMode.MINIMUM_JERK,
+        interpolation_mode: JointSpaceInterpolationMode = JointSpaceInterpolationMode.MINIMUM_JERK,
     ):
         return interpolation_mode(
             starting_pos,
@@ -212,7 +212,7 @@ class GotoActionServer(Node):
             duration,
             starting_pose,
             goal_pose,
-            interpolation_mode: InterpolationMode = InterpolationMode.MINIMUM_JERK,
+            interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.MINIMUM_JERK,
     ):
         return interpolation_mode(
             starting_pose,
@@ -280,7 +280,7 @@ class GotoActionServer(Node):
                 goto_request.goal_pose,
             )
 
-    def cmd_pub(self, joints, points):
+    def cmd_joints_pub(self, joints, points):
         cmd_msg = DynamicJointState()
         cmd_msg.header.stamp = self.get_clock().now().to_msg()
 
@@ -292,6 +292,11 @@ class GotoActionServer(Node):
             cmd_msg.interface_values.append(inter)
 
         self.dynamic_joint_commands_pub.publish(cmd_msg)
+
+    def cmd_pose_pub(self, pose):
+        req = IKRequest()
+        req.pose = pose
+        self.arm_target_pose_pub.publish(req)
 
     def get_joint_indices(self, joints):
         indices = []
@@ -306,7 +311,8 @@ class GotoActionServer(Node):
                 raise
         return indices
 
-    def goto_time(self, traj_func, joints, duration, goal_handle, sampling_freq=100):
+    def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str, sampling_freq=100):
+
         length = round(duration * sampling_freq)
         if length < 1:
             raise ValueError(
@@ -334,14 +340,22 @@ class GotoActionServer(Node):
                 # We're calling the traj_function on a time > duration on purpose,
                 # as it's coded to return the goal position when t > duration
                 point = traj_func(elapsed_time)
-                self.cmd_pub(joints, point)
+
+                if interpolation_space == "joints":
+                    self.cmd_joints_pub(joints, point)
+                elif interpolation_space == "cartesian":
+                    self.cmd_pose_pub(point)
                 self.get_logger().info(f"goto finished")
                 break
 
             point = traj_func(elapsed_time)
 
-            self.cmd_pub(joints, point)
-            commands_sent += 1
+            if interpolation_space == "joints":
+                self.cmd_joints_pub(joints, point)
+                commands_sent += 1
+            elif interpolation_space == "cartesian":
+                self.cmd_pose_pub(point)
+                commands_sent += 1
 
             if commands_sent % self.nb_commands_per_feedback == 0:
                 feedback_msg = Goto.Feedback()
@@ -414,6 +428,8 @@ class GotoActionServer(Node):
             interpolation_mode=interpolation_mode,
         )
 
+        self.get_logger().error(f"Traj_func: {traj_func}")
+
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
         )
@@ -425,7 +441,8 @@ class GotoActionServer(Node):
             joints,
             duration,
             goal_handle,
-            sampling_freq,
+            interpolation_space="joints",
+            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
@@ -455,16 +472,24 @@ class GotoActionServer(Node):
 
         traj_func = self.compute_traj_cartesian_space(
             goto_request.duration,
-            np.array(list(start_pos_dict.values())),
-            np.array(list(goal_pos_dict.values())),
-            np.array(list(start_vel_dict.values())),
-            np.array(list(goal_vel_dict.values())),
-            np.array(list(start_acc_dict.values())),
-            np.array(list(goal_acc_dict.values())),
+            start_pose,
+            goal_pose,
             interpolation_mode=interpolation_mode,
         )
 
-        pass
+        ret = self.goto_time(
+            traj_func,
+            None,
+            duration,
+            goal_handle,
+            interpolation_space="cartesian",
+            sampling_freq=sampling_freq,
+        )
+        self.get_logger().debug(
+            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
+        )
+
+        return ret
 
     def execute_callback(self, goal_handle):
         """Execute a goal."""
@@ -474,32 +499,34 @@ class GotoActionServer(Node):
 
         if interpolation_space == "joints":
             if mode == "linear":
-                interpolation_mode = InterpolationMode.LINEAR
+                interpolation_mode = JointSpaceInterpolationMode.LINEAR
             elif mode == "minimum_jerk":
-                interpolation_mode = InterpolationMode.MINIMUM_JERK
+                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
             else:
                 self.get_logger().warn(
                     f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
                 )
-                interpolation_mode = InterpolationMode.MINIMUM_JERK
+                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
         elif interpolation_space == "cartesian":
             if mode == "linear":
-                interpolation_mode = InterpolationMode.LINEAR
+                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
             elif mode == "minimum_jerk":
-                interpolation_mode = InterpolationMode.MINIMUM_JERK
+                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK
             else:
                 self.get_logger().warn(
                     f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
                 )
-                interpolation_mode = InterpolationMode.MINIMUM_JERK
+                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK
         else:
             self.get_logger().warn(
                     f"Unknown interpolation space {interpolation_space} defaulting to joints"
                 )
-            interpolation_mode = InterpolationMode.MINIMUM_JERK
+            interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
 
         if interpolation_space == "joints":
             ret = self.callback_for_joint_space(goal_handle, interpolation_mode)
+        elif interpolation_space == "cartesian":
+            ret = self.callback_for_cartesian_space(goal_handle, interpolation_mode)
 
         if ret == "finished":
             goal_handle.succeed()
