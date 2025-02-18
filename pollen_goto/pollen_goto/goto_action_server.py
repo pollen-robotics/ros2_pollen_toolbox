@@ -110,12 +110,6 @@ class GotoActionServer(Node):
             callback_group=shared_callback_group,
         )
 
-        # self.forward_sub = self.create_client(
-        #     srv_type=GetForwardKinematics,
-        #     srv_name=f"/{name_prefix}/forward_kinematics",
-        # )
-        # self.forward_sub.wait_for_service()
-
         high_freq_qos_profile = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
             history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
@@ -129,9 +123,18 @@ class GotoActionServer(Node):
             qos_profile=high_freq_qos_profile,
         )
 
+        if name_prefix == "neck":
+            name_prefix = "head"
+
+        self.forward_sub = self.create_client(
+            srv_type=GetForwardKinematics,
+            srv_name=f"/{name_prefix}/forward_kinematics",
+        )
+        self.forward_sub.wait_for_service()
+
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
-        self.get_logger().info("Goto action server init.")
+        self.get_logger().error(f"Goto action server {name_prefix} init.")
         # create thread for check_queue_and_execute
         self.check_queue_and_execute_thread = threading.Thread(
             target=self.check_queue_and_execute, daemon=True
