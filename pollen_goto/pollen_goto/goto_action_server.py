@@ -14,6 +14,7 @@ from rclpy.callback_groups import (
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
+from geometry_msgs.msg import PoseStamped
 from pollen_msgs.msg import IKRequest
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
@@ -167,7 +168,7 @@ class GotoActionServer(Node):
             self.get_logger().error(
                 "GOT CARTESIAN SPACE REQUEST, NOT IMPLEMENTED YET"
             )
-            return GoalResponse.REJECT
+            # return GoalResponse.REJECT
 
         return GoalResponse.ACCEPT
 
@@ -212,7 +213,7 @@ class GotoActionServer(Node):
             duration,
             starting_pose,
             goal_pose,
-            interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.MINIMUM_JERK,
+            interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.LINEAR,
     ):
         return interpolation_mode(
             starting_pose,
@@ -264,19 +265,25 @@ class GotoActionServer(Node):
     def prepare_data_cartesian_space(self, goto_request):
         js = JointState()
         for joint_name in goto_request.goal_joints.name:
-            js.name.extend(joint_name)
-            js.position.extend = self.joint_state_handler.joint_state[
+            js.name.append(joint_name)
+            self.get_logger().error(f"Joint {self.joint_state_handler.joint_state[joint_name]['position']} found COUCOu")
+            js.position.append(self.joint_state_handler.joint_state[
                 joint_name
-            ]["position"]
+            ]["position"])
+
+        self.get_logger().error(f"js : {js}")
 
         req = GetForwardKinematics.Request()
         req.joint_position = js
 
         resp = self.forward_sub.call(req)
 
+        start_pose = PoseStamped()
+        start_pose.pose = resp.pose
+
         if resp.success:
             return (
-                resp.pose,
+                start_pose,
                 goto_request.goal_pose,
             )
 
@@ -296,7 +303,10 @@ class GotoActionServer(Node):
     def cmd_pose_pub(self, pose):
         req = IKRequest()
         req.pose = pose
-        self.arm_target_pose_pub.publish(req)
+        req.pose.header.stamp = self.get_clock().now().to_msg()
+
+        self.get_logger().error(f"Publishing IK req: {req}")
+        # self.arm_target_pose_pub.publish(req)
 
     def get_joint_indices(self, joints):
         indices = []
@@ -507,16 +517,17 @@ class GotoActionServer(Node):
                     f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
                 )
                 interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+        # TODO : FIX MINIMUM_JERK
         elif interpolation_space == "cartesian":
             if mode == "linear":
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
             elif mode == "minimum_jerk":
-                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK
+                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
             else:
                 self.get_logger().warn(
-                    f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
+                    f"Unknown interpolation mode {mode} defaulting to linear"
                 )
-                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK
+                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
         else:
             self.get_logger().warn(
                     f"Unknown interpolation space {interpolation_space} defaulting to joints"

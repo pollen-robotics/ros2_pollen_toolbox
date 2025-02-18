@@ -6,13 +6,14 @@ Provides two main interpolation methods:
 """
 
 from enum import Enum
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from pyquaternion import Quaternion
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseStamped
 
 import numpy as np
+import numpy.typing as npt
 
-InterpolationFunc = Callable[[float], np.ndarray | Pose]
+InterpolationFunc = Callable[[float], np.ndarray | PoseStamped]
 
 # Note: for these functions to behave correctly, motor positions should be monotonic. Meaning no "179->180->-180" transitions.
 
@@ -81,24 +82,24 @@ def minimum_jerk(
     return f
 
 
-def cartesian_linear(starting_pose: np.ndarray, goal_pose: Pose, duration: float) -> InterpolationFunc:
+def cartesian_linear(starting_pose: np.ndarray, goal_pose: PoseStamped, duration: float) -> InterpolationFunc:
     """Compute the linear interpolation function from starting pose to goal pose."""
 
-    def decompose_pose(pose: Pose) -> Tuple[Quaternion, npt.NDArray[np.float64]]:
-        translation = [pose.position.x, pose.position.y, pose.position.z]
+    def decompose_pose(pose: PoseStamped) -> Tuple[Quaternion, npt.NDArray[np.float64]]:
+        translation = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z])
 
-        rotation = Quaternion(w=pose.orientation.w, x=pose.orientation.x, y=pose.orientation.y, z=pose.orientation.z, atol=1e-05, rtol=1e-05)
+        rotation = Quaternion(w=pose.pose.orientation.w, x=pose.pose.orientation.x, y=pose.pose.orientation.y, z=pose.pose.orientation.z)
         return rotation, translation
 
-    def recompose_pose(rotation: Quaternion, translation: npt.NDArray[np.float64]) -> Pose:
-        pose = Pose()
-        pose.position.x = translation[0]
-        pose.position.y = translation[1]
-        pose.position.z = translation[2]
-        pose.orientation.x = rotation.x
-        pose.orientation.y = rotation.y
-        pose.orientation.z = rotation.z
-        pose.orientation.w = rotation.w
+    def recompose_pose(rotation: Quaternion, translation: npt.NDArray[np.float64]) -> PoseStamped:
+        pose = PoseStamped()
+        pose.pose.position.x = translation[0]
+        pose.pose.position.y = translation[1]
+        pose.pose.position.z = translation[2]
+        pose.pose.orientation.x = rotation.x
+        pose.pose.orientation.y = rotation.y
+        pose.pose.orientation.z = rotation.z
+        pose.pose.orientation.w = rotation.w
         return pose
 
     q_start, trans_start = decompose_pose(starting_pose)
