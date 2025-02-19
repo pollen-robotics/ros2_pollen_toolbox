@@ -19,7 +19,7 @@ from pollen_msgs.msg import IKRequest
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 
-from .interpolation import JointSpaceInterpolationMode, CartesianSpaceInterpolationMode, InterpolationFunc
+from .interpolation import JointSpaceInterpolationMode, CartesianSpaceInterpolationMode
 
 
 class CentralJointStateHandler(Node):
@@ -135,7 +135,7 @@ class GotoActionServer(Node):
 
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
-        self.get_logger().error(f"Goto action server {name_prefix} init.")
+        self.get_logger().info(f"Goto action server {name_prefix} init.")
         # create thread for check_queue_and_execute
         self.check_queue_and_execute_thread = threading.Thread(
             target=self.check_queue_and_execute, daemon=True
@@ -149,26 +149,20 @@ class GotoActionServer(Node):
     def goal_callback(self, goal_request):
         """Accept or reject a client request to begin an action."""
         # This server allows multiple goals in parallel
-        self.get_logger().error(f"Received goal request: {goal_request.request}")
+        self.get_logger().debug(f"Received goal request: {goal_request.request}")
         request = goal_request.request  # This is of type pollen_msgs/GotoRequest
         duration = request.duration
         if duration <= 0.001:
-            self.get_logger().error(f"Invalid duration {duration}")
+            self.get_logger().debug(f"Invalid duration {duration}")
             return GoalResponse.REJECT
 
         elif request.interpolation_space == "joints" and (len(request.goal_joints.name) < 1 or (
             len(request.goal_joints.name) != len(request.goal_joints.position)
         )):
-            self.get_logger().error(
+            self.get_logger().debug(
                 f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
             )
             return GoalResponse.REJECT
-
-        elif request.interpolation_space == "cartesian":
-            self.get_logger().error(
-                "GOT CARTESIAN SPACE REQUEST, NOT IMPLEMENTED YET"
-            )
-            # return GoalResponse.REJECT
 
         return GoalResponse.ACCEPT
 
@@ -232,7 +226,6 @@ class GotoActionServer(Node):
         start_acc_dict = {}
 
         for it, joint_name in enumerate(goto_request.goal_joints.name):
-            self.get_logger().error(f"Joint {joint_name} found in joint_names")
             goal_pos_dict[joint_name] = goto_request.goal_joints.position[it]
 
             start_pos_dict[joint_name] = self.joint_state_handler.joint_state[
@@ -266,12 +259,9 @@ class GotoActionServer(Node):
         js = JointState()
         for joint_name in goto_request.goal_joints.name:
             js.name.append(joint_name)
-            self.get_logger().error(f"Joint {self.joint_state_handler.joint_state[joint_name]['position']} found COUCOu")
             js.position.append(self.joint_state_handler.joint_state[
                 joint_name
             ]["position"])
-
-        self.get_logger().error(f"js : {js}")
 
         req = GetForwardKinematics.Request()
         req.joint_position = js
@@ -305,8 +295,13 @@ class GotoActionServer(Node):
         req.pose = pose
         req.pose.header.stamp = self.get_clock().now().to_msg()
 
-        self.get_logger().error(f"Publishing IK req: {req}")
-        # self.arm_target_pose_pub.publish(req)
+        req.constrained_mode = "unconstrained"
+        req.continuous_mode = "continuous"
+        req.preferred_theta = -4 * np.pi / 6
+        req.d_theta_max = 0.01
+        req.order_id = 0
+
+        self.arm_target_pose_pub.publish(req)
 
     def get_joint_indices(self, joints):
         indices = []
@@ -437,8 +432,6 @@ class GotoActionServer(Node):
             np.array(list(goal_acc_dict.values())),
             interpolation_mode=interpolation_mode,
         )
-
-        self.get_logger().error(f"Traj_func: {traj_func}")
 
         self.get_logger().debug(
             f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
