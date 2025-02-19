@@ -2,24 +2,25 @@ import threading
 import time
 from queue import Queue
 from threading import Event
+from typing import Optional
 
 import numpy as np
 import rclpy
 from control_msgs.msg import DynamicJointState, InterfaceValue
+from geometry_msgs.msg import PoseStamped
 from pollen_msgs.action import Goto
+from pollen_msgs.msg import IKRequest
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import (
-    MutuallyExclusiveCallbackGroup,
-)  # ReentrantCallbackGroup
+from rclpy.callback_groups import \
+    MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import JointState
-from geometry_msgs.msg import PoseStamped
-from pollen_msgs.msg import IKRequest
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
+from sensor_msgs.msg import JointState
 
-from .interpolation import JointSpaceInterpolationMode, CartesianSpaceInterpolationMode
+from .interpolation import (CartesianSpaceInterpolationMode,
+                            JointSpaceInterpolationMode)
 
 
 class CentralJointStateHandler(Node):
@@ -65,9 +66,7 @@ class CentralJointStateHandler(Node):
                 self.joint_state[name] = {}
             self.joint_state_ready.set()
 
-        for name, pos, vel, effort in zip(
-            state.name, state.position, state.velocity, state.effort
-        ):
+        for name, pos, vel, effort in zip(state.name, state.position, state.velocity, state.effort):
             self.joint_state[name]["position"] = pos
             self.joint_state[name]["velocity"] = vel
             self.joint_state[name]["effort"] = effort
@@ -137,9 +136,7 @@ class GotoActionServer(Node):
         self.nb_commands_per_feedback = 10
         self.get_logger().info(f"Goto action server {name_prefix} init.")
         # create thread for check_queue_and_execute
-        self.check_queue_and_execute_thread = threading.Thread(
-            target=self.check_queue_and_execute, daemon=True
-        )
+        self.check_queue_and_execute_thread = threading.Thread(target=self.check_queue_and_execute, daemon=True)
         self.check_queue_and_execute_thread.start()
 
     def destroy(self):
@@ -156,9 +153,9 @@ class GotoActionServer(Node):
             self.get_logger().debug(f"Invalid duration {duration}")
             return GoalResponse.REJECT
 
-        elif request.interpolation_space == "joints" and (len(request.goal_joints.name) < 1 or (
-            len(request.goal_joints.name) != len(request.goal_joints.position)
-        )):
+        elif request.interpolation_space == "joints" and (
+            len(request.goal_joints.name) < 1 or (len(request.goal_joints.name) != len(request.goal_joints.position))
+        ):
             self.get_logger().debug(
                 f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
             )
@@ -203,16 +200,20 @@ class GotoActionServer(Node):
         )
 
     def compute_traj_cartesian_space(
-            self,
-            duration,
-            starting_pose,
-            goal_pose,
-            interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.LINEAR,
+        self,
+        duration,
+        starting_pose,
+        goal_pose,
+        interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.LINEAR,
+        arc_direction: Optional[str] = "above",
+        secondary_radius: Optional[float] = None,
     ):
         return interpolation_mode(
             starting_pose,
             goal_pose,
             duration,
+            arc_direction,
+            secondary_radius,
         )
 
     def prepare_data_joint_space(self, goto_request):
@@ -228,15 +229,11 @@ class GotoActionServer(Node):
         for it, joint_name in enumerate(goto_request.goal_joints.name):
             goal_pos_dict[joint_name] = goto_request.goal_joints.position[it]
 
-            start_pos_dict[joint_name] = self.joint_state_handler.joint_state[
-                joint_name
-            ]["position"]
+            start_pos_dict[joint_name] = self.joint_state_handler.joint_state[joint_name]["position"]
 
             if len(goto_request.goal_joints.velocity) > 0:
                 goal_vel_dict[joint_name] = goto_request.goal_joints.velocity[it]
-                start_vel_dict[joint_name] = self.joint_state_handler.joint_state[
-                    joint_name
-                ]["velocity"]
+                start_vel_dict[joint_name] = self.joint_state_handler.joint_state[joint_name]["velocity"]
 
             else:
                 goal_vel_dict[joint_name] = 0.0
@@ -259,9 +256,7 @@ class GotoActionServer(Node):
         js = JointState()
         for joint_name in goto_request.goal_joints.name:
             js.name.append(joint_name)
-            js.position.append(self.joint_state_handler.joint_state[
-                joint_name
-            ]["position"])
+            js.position.append(self.joint_state_handler.joint_state[joint_name]["position"])
 
         req = GetForwardKinematics.Request()
         req.joint_position = js
@@ -307,9 +302,7 @@ class GotoActionServer(Node):
         indices = []
         for name in joints:
             try:
-                idx = self.joint_state_handler.dynamic_joint_commands.joint_names.index(
-                    name
-                )
+                idx = self.joint_state_handler.dynamic_joint_commands.joint_names.index(name)
                 indices.append(idx)
             except ValueError:
                 self.get_logger().error(f"Joint {name} not found in joint_names")
@@ -317,12 +310,9 @@ class GotoActionServer(Node):
         return indices
 
     def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str, sampling_freq=100):
-
         length = round(duration * sampling_freq)
         if length < 1:
-            raise ValueError(
-                f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
-            )
+            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
 
         t0 = time.time()
         dt = 1 / sampling_freq
@@ -402,9 +392,7 @@ class GotoActionServer(Node):
         # try:
         self.get_logger().info(f"Executing goal...")
         ret = ""
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()")
 
         (
             start_pos_dict,
@@ -415,9 +403,7 @@ class GotoActionServer(Node):
             goal_acc_dict,
         ) = self.prepare_data_joint_space(goto_request)
 
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data")
         self.get_logger().debug(
             f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
         )
@@ -433,9 +419,7 @@ class GotoActionServer(Node):
             interpolation_mode=interpolation_mode,
         )
 
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj")
 
         joints = start_pos_dict.keys()
 
@@ -447,9 +431,7 @@ class GotoActionServer(Node):
             interpolation_space="joints",
             sampling_freq=sampling_freq,
         )
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
         return ret
 
@@ -464,9 +446,7 @@ class GotoActionServer(Node):
         # try:
         self.get_logger().info(f"Executing goal...")
         ret = ""
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()")
 
         (
             start_pose,
@@ -478,6 +458,8 @@ class GotoActionServer(Node):
             start_pose,
             goal_pose,
             interpolation_mode=interpolation_mode,
+            arc_direction=goto_request.arc_direction,
+            secondary_radius=goto_request.secondary_radius,
         )
 
         ret = self.goto_time(
@@ -488,9 +470,7 @@ class GotoActionServer(Node):
             interpolation_space="cartesian",
             sampling_freq=sampling_freq,
         )
-        self.get_logger().debug(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
-        )
+        self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
         return ret
 
@@ -506,31 +486,29 @@ class GotoActionServer(Node):
             elif mode == "minimum_jerk":
                 interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
             else:
-                self.get_logger().warn(
-                    f"Unknown interpolation mode {mode} defaulting to minimum_jerk"
-                )
+                self.get_logger().warn(f"Unknown interpolation mode {mode} defaulting to minimum_jerk")
                 interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+            callback = self.callback_for_joint_space
+
         # TODO : FIX MINIMUM_JERK
         elif interpolation_space == "cartesian":
             if mode == "linear":
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
             elif mode == "minimum_jerk":
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
+            elif mode == "elliptical":
+                interpolation_mode = CartesianSpaceInterpolationMode.ELLIPTICAL
             else:
-                self.get_logger().warn(
-                    f"Unknown interpolation mode {mode} defaulting to linear"
-                )
+                self.get_logger().warn(f"Unknown interpolation mode {mode} defaulting to linear")
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
-        else:
-            self.get_logger().warn(
-                    f"Unknown interpolation space {interpolation_space} defaulting to joints"
-                )
-            interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+            callback = self.callback_for_cartesian_space
 
-        if interpolation_space == "joints":
-            ret = self.callback_for_joint_space(goal_handle, interpolation_mode)
-        elif interpolation_space == "cartesian":
-            ret = self.callback_for_cartesian_space(goal_handle, interpolation_mode)
+        else:
+            self.get_logger().warn(f"Unknown interpolation space {interpolation_space} defaulting to joints")
+            interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+            callback = self.callback_for_joint_space
+
+        ret = callback(goal_handle, interpolation_mode)
 
         if ret == "finished":
             goal_handle.succeed()
@@ -550,15 +528,9 @@ def main(args=None):
     callback_group = MutuallyExclusiveCallbackGroup()
 
     joint_state_handler = CentralJointStateHandler(callback_group)
-    r_arm_goto_action_server = GotoActionServer(
-        "r_arm", joint_state_handler, callback_group
-    )
-    l_arm_goto_action_server = GotoActionServer(
-        "l_arm", joint_state_handler, callback_group
-    )
-    neck_goto_action_server = GotoActionServer(
-        "neck", joint_state_handler, callback_group
-    )
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group)
+    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group)
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
     mult_executor.add_node(r_arm_goto_action_server)

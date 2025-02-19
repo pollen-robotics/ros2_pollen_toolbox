@@ -7,11 +7,13 @@ Provides two main interpolation methods:
 
 from enum import Enum
 from typing import Callable, Optional, Tuple
-from pyquaternion import Quaternion
-from geometry_msgs.msg import PoseStamped
 
 import numpy as np
 import numpy.typing as npt
+from geometry_msgs.msg import PoseStamped
+from pyquaternion import Quaternion
+
+from .utils import decompose_pose, get_normal_vector, recompose_pose
 
 InterpolationFunc = Callable[[float], np.ndarray | PoseStamped]
 
@@ -82,58 +84,105 @@ def minimum_jerk(
     return f
 
 
-def cartesian_linear(starting_pose: np.ndarray, goal_pose: PoseStamped, duration: float) -> InterpolationFunc:
+def cartesian_linear(
+    starting_pose: np.ndarray,
+    goal_pose: PoseStamped,
+    duration: float,
+    arc_direction: Optional[str] = None,
+    secondary_radius: Optional[float] = None,
+) -> InterpolationFunc:
     """Compute the linear interpolation function from starting pose to goal pose."""
-
-    def decompose_pose(pose: PoseStamped) -> Tuple[Quaternion, npt.NDArray[np.float64]]:
-        translation = np.array([pose.pose.position.x, pose.pose.position.y, pose.pose.position.z])
-
-        rotation = Quaternion(w=pose.pose.orientation.w, x=pose.pose.orientation.x, y=pose.pose.orientation.y, z=pose.pose.orientation.z)
-        return rotation, translation
-
-    def recompose_pose(rotation: Quaternion, translation: npt.NDArray[np.float64]) -> PoseStamped:
-        pose = PoseStamped()
-        pose.pose.position.x = translation[0]
-        pose.pose.position.y = translation[1]
-        pose.pose.position.z = translation[2]
-        pose.pose.orientation.x = rotation.x
-        pose.pose.orientation.y = rotation.y
-        pose.pose.orientation.z = rotation.z
-        pose.pose.orientation.w = rotation.w
-        return pose
-
-    q_start, trans_start = decompose_pose(starting_pose)
-    q_stop, trans_stop = decompose_pose(goal_pose)
+    q_origin, trans_origin = decompose_pose(starting_pose)
+    q_target, trans_target = decompose_pose(goal_pose)
 
     def f(t: float) -> np.ndarray:
         if t > duration:
             return goal_pose
-        trans_interpolated = trans_start + (trans_stop - trans_start) * t / duration
-        q_interpolated = Quaternion.slerp(q_start, q_stop, t / duration)
+        trans_interpolated = trans_origin + (trans_target - trans_origin) * t / duration
+        q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
         pose = recompose_pose(q_interpolated, trans_interpolated)
         return pose
 
     return f
 
 
-def cartesian_minimum_jerk(starting_pose: np.ndarray, goal_pose: np.ndarray, duration: float) -> InterpolationFunc:
+def cartesian_minimum_jerk(
+    starting_pose: np.ndarray,
+    goal_pose: PoseStamped,
+    duration: float,
+    arc_direction: Optional[str] = None,
+    secondary_radius: Optional[float] = None,
+) -> InterpolationFunc:
     """Compute the mimimum jerk interpolation function from starting pose to goal pose."""
     pass
+
+
+def cartesian_elliptical(
+    starting_pose: np.ndarray,
+    goal_pose: PoseStamped,
+    duration: float,
+    arc_direction: Optional[str] = None,
+    secondary_radius: Optional[float] = None,
+) -> InterpolationFunc:
+    """Compute the elliptical interpolation function from starting pose to goal pose."""
+    q_origin, trans_origin = decompose_pose(starting_pose)
+    q_target, trans_target = decompose_pose(goal_pose)
+
+    vector_target_origin = trans_target - trans_origin
+
+    center = (trans_origin + trans_target) / 2
+    radius = float(np.linalg.norm(vector_target_origin) / 2)
+
+    vector_origin_center = trans_origin - center
+    vector_target_center = trans_target - center
+
+    if secondary_radius is None:
+        secondary_radius = radius
+
+    normal = get_normal_vector(vector=vector_target_origin, arc_direction=arc_direction)
+
+    if np.isclose(radius, 0, atol=1e-03) or normal is None:
+        return cartesian_linear(starting_pose, goal_pose, duration)
+
+    cos_angle = np.dot(vector_origin_center, vector_target_center) / (
+        np.linalg.norm(vector_origin_center) * np.linalg.norm(vector_target_center)
+    )
+    angle = np.arccos(np.clip(cos_angle, -1, 1))
+
+    def f(t: float) -> np.ndarray:
+        if t > duration:
+            return goal_pose
+
+        theta = t / duration * angle
+
+        # Rotation of origin_vector around the circle center in the plan defined by 'normal'
+        q1 = Quaternion(axis=normal, angle=theta)
+        rotation_matrix = q1.rotation_matrix
+        # Interpolated point in plan
+        trans_interpolated = np.dot(rotation_matrix, vector_origin_center)
+        # Adjusting the ellipse
+        ellipse_interpolated = trans_interpolated * np.array([1, 1, secondary_radius / radius])
+        trans_interpolated = ellipse_interpolated + center
+
+        q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
+        q_interpolated = q_interpolated.rotation_matrix
+
+        pose = recompose_pose(q_interpolated, trans_interpolated)
+        return pose
+
+    return f
 
 
 class JointSpaceInterpolationMode(Enum):
     """Inteprolation Mode enumeration."""
 
     LINEAR: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = linear
-    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = (
-        minimum_jerk
-    )
+    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = minimum_jerk
 
 
 class CartesianSpaceInterpolationMode(Enum):
     """Inteprolation Mode enumeration."""
 
     LINEAR: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_linear
-    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = (
-        cartesian_minimum_jerk
-    )
+    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_minimum_jerk
+    ELLIPTICAL: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_elliptical
