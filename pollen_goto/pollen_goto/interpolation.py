@@ -88,8 +88,8 @@ def cartesian_linear(
     starting_pose: np.ndarray,
     goal_pose: PoseStamped,
     duration: float,
-    arc_direction: Optional[str] = None,
-    secondary_radius: Optional[float] = None,
+    arc_direction: str,
+    secondary_radius: float,
 ) -> InterpolationFunc:
     """Compute the linear interpolation function from starting pose to goal pose."""
     q_origin, trans_origin = decompose_pose(starting_pose)
@@ -110,8 +110,8 @@ def cartesian_minimum_jerk(
     starting_pose: np.ndarray,
     goal_pose: PoseStamped,
     duration: float,
-    arc_direction: Optional[str] = None,
-    secondary_radius: Optional[float] = None,
+    arc_direction: str,
+    secondary_radius: float,
 ) -> InterpolationFunc:
     """Compute the mimimum jerk interpolation function from starting pose to goal pose."""
     pass
@@ -121,10 +121,12 @@ def cartesian_elliptical(
     starting_pose: np.ndarray,
     goal_pose: PoseStamped,
     duration: float,
-    arc_direction: Optional[str] = None,
-    secondary_radius: Optional[float] = None,
+    arc_direction: str,
+    secondary_radius: float,
 ) -> InterpolationFunc:
     """Compute the elliptical interpolation function from starting pose to goal pose."""
+
+    print("Elliptical interpolation")
     q_origin, trans_origin = decompose_pose(starting_pose)
     q_target, trans_target = decompose_pose(goal_pose)
 
@@ -136,7 +138,7 @@ def cartesian_elliptical(
     vector_origin_center = trans_origin - center
     vector_target_center = trans_target - center
 
-    if secondary_radius is None:
+    if secondary_radius < 0:
         secondary_radius = radius
 
     normal = get_normal_vector(vector=vector_target_origin, arc_direction=arc_direction)
@@ -165,7 +167,8 @@ def cartesian_elliptical(
         trans_interpolated = ellipse_interpolated + center
 
         q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
-        q_interpolated = q_interpolated.rotation_matrix
+        rot_interpolated = q_interpolated.rotation_matrix
+        q_interpolated = Quaternion(matrix=rot_interpolated)
 
         pose = recompose_pose(q_interpolated, trans_interpolated)
         return pose
