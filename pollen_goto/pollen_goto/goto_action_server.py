@@ -8,20 +8,17 @@ import numpy as np
 import rclpy
 from control_msgs.msg import DynamicJointState, InterfaceValue
 from geometry_msgs.msg import PoseStamped
+from pollen_msgs.action import Goto
+from pollen_msgs.msg import IKRequest
+from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import \
-    MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 
-from pollen_msgs.action import Goto
-from pollen_msgs.msg import IKRequest
-from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
-
-from .interpolation import (CartesianSpaceInterpolationMode,
-                            JointSpaceInterpolationMode)
+from .interpolation import CartesianSpaceInterpolationMode, JointSpaceInterpolationMode
 
 
 class CentralJointStateHandler(Node):
