@@ -114,7 +114,36 @@ def cartesian_minimum_jerk(
     secondary_radius: float,
 ) -> InterpolationFunc:
     """Compute the mimimum jerk interpolation function from starting pose to goal pose."""
-    pass
+    q_origin, trans_origin = decompose_pose(starting_pose)
+    q_target, trans_target = decompose_pose(goal_pose)
+
+    a0 = trans_origin
+    a1 = np.zeros(3)
+    a2 = np.zeros(3)
+
+    d1, d2, d3, d4, d5 = [duration**i for i in range(1, 6)]
+
+    A = np.array(((d3, d4, d5), (3 * d2, 4 * d3, 5 * d4), (6 * d1, 12 * d2, 20 * d3)))
+    B = np.array(
+        (
+            trans_target - a0 - (a1 * d1) - (a2 * d2),
+            np.zeros(3) - a1 - (2 * a2 * d1),
+            np.zeros(3) - (2 * a2),
+        )
+    )
+    X = np.linalg.solve(A, B)
+
+    coeffs = [a0, a1, a2, X[0], X[1], X[2]]
+
+    def f(t: float) -> np.ndarray:
+        if t > duration:
+            return goal_pose
+        trans_interpolated = np.sum([c * t**i for i, c in enumerate(coeffs)], axis=0)
+        q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
+        pose = recompose_pose(q_interpolated, trans_interpolated)
+        return pose
+
+    return f
 
 
 def cartesian_elliptical(
