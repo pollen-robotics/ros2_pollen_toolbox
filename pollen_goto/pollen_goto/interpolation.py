@@ -167,8 +167,6 @@ def cartesian_elliptical(
         trans_interpolated = ellipse_interpolated + center
 
         q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
-        rot_interpolated = q_interpolated.rotation_matrix
-        q_interpolated = Quaternion(matrix=rot_interpolated)
 
         pose = recompose_pose(q_interpolated, trans_interpolated)
         return pose
