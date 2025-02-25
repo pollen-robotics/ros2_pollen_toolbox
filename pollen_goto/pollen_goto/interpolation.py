@@ -191,9 +191,21 @@ def cartesian_elliptical(
         rotation_matrix = q1.rotation_matrix
         # Interpolated point in plan
         trans_interpolated = np.dot(rotation_matrix, vector_origin_center)
-        # Adjusting the ellipse
-        ellipse_interpolated = trans_interpolated * np.array([1, 1, secondary_radius / radius])
-        trans_interpolated = ellipse_interpolated + center
+        # Find the major and minor axes in the plane of the ellipse
+        major_axis = vector_target_origin / np.linalg.norm(vector_target_origin)
+        minor_axis = np.cross(normal, major_axis)
+        minor_axis = minor_axis / np.linalg.norm(minor_axis)
+
+        # Project the interpolated point onto the major and minor axes
+        major_component = np.dot(trans_interpolated, major_axis)
+        minor_component = np.dot(trans_interpolated, minor_axis)
+
+        # Adjust the ellipse using the secondary radius
+        adjusted_trans = (
+            major_component * major_axis +
+            (minor_component * (secondary_radius / radius)) * minor_axis
+        )
+        trans_interpolated = adjusted_trans + center
 
         q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
 
