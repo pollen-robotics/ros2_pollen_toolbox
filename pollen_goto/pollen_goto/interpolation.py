@@ -173,7 +173,7 @@ def cartesian_elliptical(
     normal = get_normal_vector(vector=vector_target_origin, arc_direction=arc_direction)
 
     if np.isclose(radius, 0, atol=1e-03) or normal is None:
-        return cartesian_linear(starting_pose, goal_pose, duration)
+        return cartesian_linear(starting_pose, goal_pose, duration, arc_direction, secondary_radius)
 
     cos_angle = np.dot(vector_origin_center, vector_target_center) / (
         np.linalg.norm(vector_origin_center) * np.linalg.norm(vector_target_center)
