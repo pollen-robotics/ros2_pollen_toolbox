@@ -84,7 +84,7 @@ class CentralJointStateHandler(Node):
 
 
 class GotoActionServer(Node):
-    def __init__(self, name_prefix, joint_state_handler, shared_callback_group):
+    def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.joint_state_handler = joint_state_handler
         self._goal_queue = Queue()
@@ -108,27 +108,28 @@ class GotoActionServer(Node):
             callback_group=shared_callback_group,
         )
 
-        high_freq_qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
-            history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
-            depth=1,  # Minimal depth, for the latest message
-            # Other QoS settings can be adjusted as needed
-        )
+        if init_kinematics:
+            high_freq_qos_profile = QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
+                history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
+                depth=1,  # Minimal depth, for the latest message
+                # Other QoS settings can be adjusted as needed
+            )
 
-        self.arm_target_pose_pub = self.create_publisher(
-            msg_type=IKRequest,
-            topic=f"/{name_prefix}/ik_target_pose",
-            qos_profile=high_freq_qos_profile,
-        )
+            self.arm_target_pose_pub = self.create_publisher(
+                msg_type=IKRequest,
+                topic=f"/{name_prefix}/ik_target_pose",
+                qos_profile=high_freq_qos_profile,
+            )
 
-        if name_prefix == "neck":
-            name_prefix = "head"
+            if name_prefix == "neck":
+                name_prefix = "head"
 
-        self.forward_sub = self.create_client(
-            srv_type=GetForwardKinematics,
-            srv_name=f"/{name_prefix}/forward_kinematics",
-        )
-        self.forward_sub.wait_for_service()
+            self.forward_sub = self.create_client(
+                srv_type=GetForwardKinematics,
+                srv_name=f"/{name_prefix}/forward_kinematics",
+            )
+            self.forward_sub.wait_for_service()
 
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
@@ -488,7 +489,6 @@ class GotoActionServer(Node):
                 interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
             callback = self.callback_for_joint_space
 
-        # TODO : FIX MINIMUM_JERK
         elif interpolation_space == "cartesian":
             if mode == "linear":
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
@@ -526,14 +526,18 @@ def main(args=None):
     callback_group = MutuallyExclusiveCallbackGroup()
 
     joint_state_handler = CentralJointStateHandler(callback_group)
-    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group)
-    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group)
-    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group)
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True)
+    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group, init_kinematics=True)
+    antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, callback_group)
+    antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, callback_group)
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
     mult_executor.add_node(r_arm_goto_action_server)
     mult_executor.add_node(l_arm_goto_action_server)
     mult_executor.add_node(neck_goto_action_server)
+    mult_executor.add_node(antenna_right_goto_action_server)
+    mult_executor.add_node(antenna_left_goto_action_server)
     executor_thread = threading.Thread(target=mult_executor.spin, daemon=True)
     executor_thread.start()
     rate = r_arm_goto_action_server.create_rate(2.0)
