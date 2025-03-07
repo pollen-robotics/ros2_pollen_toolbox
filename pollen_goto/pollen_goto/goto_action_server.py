@@ -387,7 +387,6 @@ class GotoActionServer(Node):
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         sampling_freq = goto_request.sampling_freq
-        safety_on = goto_request.safety_on
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -441,7 +440,6 @@ class GotoActionServer(Node):
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         sampling_freq = goto_request.sampling_freq
-        safety_on = goto_request.safety_on
 
         # try:
         self.get_logger().info(f"Executing goal...")
