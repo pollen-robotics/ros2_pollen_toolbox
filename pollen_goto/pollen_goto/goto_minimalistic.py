@@ -1,20 +1,21 @@
-from calendar import c
+import collections
+import threading
 import time
-from pollen_msgs.action import Goto
-from control_msgs.msg import DynamicJointState, InterfaceValue
+from calendar import c
+from threading import Event
 
+import numpy as np
 import rclpy
+from control_msgs.msg import DynamicJointState, InterfaceValue
+from pollen_msgs.action import Goto
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import (MutuallyExclusiveCallbackGroup,
+                                   ReentrantCallbackGroup)
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from .interpolation import InterpolationMode
 
-from threading import Event
-import threading
-import numpy as np
-import collections
+from .interpolation import InterpolationMode
 
 
 class GotoActionServer(Node):
@@ -66,9 +67,7 @@ class GotoActionServer(Node):
                 self.joint_state[name] = {}
             self.joint_state_ready.set()
 
-        for name, pos, vel, effort in zip(
-            state.name, state.position, state.velocity, state.effort
-        ):
+        for name, pos, vel, effort in zip(state.name, state.position, state.velocity, state.effort):
             self.joint_state[name]["position"] = pos
             self.joint_state[name]["velocity"] = vel
             self.joint_state[name]["effort"] = effort
@@ -161,14 +160,10 @@ class GotoActionServer(Node):
             # print self.dynamic_joint_commands
             self.dynamic_joint_commands.interface_values[idx].values[0] = p
 
-    def goto(
-        self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
-    ):
+    def goto(self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100):
         length = round(duration * sampling_freq)
         if length < 1:
-            raise ValueError(
-                f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
-            )
+            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
 
         t0 = self.get_clock().now()
 
@@ -191,14 +186,10 @@ class GotoActionServer(Node):
 
         return "finished"
 
-    def goto_time(
-        self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100
-    ):
+    def goto_time(self, traj_func, joints, duration, goal_handle, sampling_freq: float = 100):
         length = round(duration * sampling_freq)
         if length < 1:
-            raise ValueError(
-                f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!"
-            )
+            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
 
         t0 = time.time()
 
@@ -225,9 +216,7 @@ class GotoActionServer(Node):
         start_time = time.time()
         self.get_logger().info(f"Executing goal...")
         ret = ""
-        self.get_logger().warn(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()"
-        )
+        self.get_logger().warn(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after joint_state_ready.is_set()")
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         mode = goto_request.mode
@@ -242,9 +231,7 @@ class GotoActionServer(Node):
             start_acc_dict,
             goal_acc_dict,
         ) = self.prepare_data(goto_request)
-        self.get_logger().warn(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data"
-        )
+        self.get_logger().warn(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after prepare data")
         self.get_logger().debug(
             f"start_pos: {start_pos_dict} goal_pos: {goal_pos_dict} duration: {duration} start_vel: {start_vel_dict} start_acc: {start_acc_dict} goal_vel: {goal_vel_dict} goal_acc: {goal_acc_dict}"
         )
@@ -259,9 +246,7 @@ class GotoActionServer(Node):
             np.array(list(goal_acc_dict.values())),
             interpolation_mode=InterpolationMode.MINIMUM_JERK,
         )
-        self.get_logger().warn(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj"
-        )
+        self.get_logger().warn(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after compute_traj")
         joints = start_pos_dict.keys()
         ret = self.goto(  # "goto_time" works, "goto" has the slow frequency issue
             traj_func,
@@ -270,9 +255,7 @@ class GotoActionServer(Node):
             goal_handle,
             sampling_freq=sampling_freq,
         )
-        self.get_logger().warn(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto"
-        )
+        self.get_logger().warn(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
         if ret == "finished":
             goal_handle.succeed()
@@ -282,9 +265,7 @@ class GotoActionServer(Node):
         result.result.status = ret
         self.get_logger().debug(f"Returning result {result}")
 
-        self.get_logger().warn(
-            f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end"
-        )
+        self.get_logger().warn(f"Timestamp: {1000*(time.time() - start_time):.2f}ms at the end")
 
         return result
 

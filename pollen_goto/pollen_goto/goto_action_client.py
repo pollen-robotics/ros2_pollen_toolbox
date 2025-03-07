@@ -1,19 +1,15 @@
-import copy
-import rclpy
 import asyncio
-import numpy as np
-
-from action_msgs.msg import GoalStatus
-
-from pollen_msgs.action import Goto
-from sensor_msgs.msg import JointState
-
-
-from rclpy.action import ActionClient
-from rclpy.node import Node
+import copy
 from typing import List
 
+import numpy as np
+import rclpy
+from action_msgs.msg import GoalStatus
+from pollen_msgs.action import Goto
+from rclpy.action import ActionClient
+from rclpy.node import Node
 from reachy_sdk_server.conversion import matrix_to_pose, pose_to_matrix
+from sensor_msgs.msg import JointState
 
 
 class GotoActionClient(Node):
@@ -59,9 +55,7 @@ class GotoActionClient(Node):
 
         self.get_logger().info("Sending goal request...")
 
-        goal_handle = await self.goto_action_client[part].send_goal_async(
-            goal_msg, feedback_callback=feedback_callback
-        )
+        goal_handle = await self.goto_action_client[part].send_goal_async(goal_msg, feedback_callback=feedback_callback)
         self.get_logger().info("feedback_callback setuped")
 
         if not goal_handle.accepted:
@@ -141,15 +135,9 @@ async def non_blocking_demo(action_client, loop):
     logger = rclpy.logging.get_logger("goto_action_client")
 
     logger.info(f"$$$$$$ EXAMPLE 2: simultaneous async calls")
-    my_task1 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 2.0)
-    )
-    my_task2 = loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0)
-    )
-    my_task3 = loop.create_task(
-        action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
-    )
+    my_task1 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 2.0))
+    my_task2 = loop.create_task(action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0))
+    my_task3 = loop.create_task(action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0))
     logger.info(f"Gluing tasks and waiting")
 
     wait_future = asyncio.wait([my_task1, my_task2, my_task3])
@@ -161,15 +149,9 @@ async def non_blocking_demo(action_client, loop):
         logger.info(f"Result: {result.result.status}")
 
     logger.info(f"$$$$$$ EXAMPLE 2: Going back to start position")
-    my_task1 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0)
-    )
-    my_task2 = loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0)
-    )
-    my_task3 = loop.create_task(
-        action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
-    )
+    my_task1 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0))
+    my_task2 = loop.create_task(action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0))
+    my_task3 = loop.create_task(action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0))
     logger.info(f"Gluing tasks and waiting")
     wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
@@ -185,19 +167,13 @@ async def non_blocking_demo_delay(action_client, loop):
     logger.info(f"$$$$$$ EXAMPLE 3: delayed async calls")
     # execute goal request and schedule in loop
     logger.info(f"Creating task1")
-    my_task1 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 2.0)
-    )
+    my_task1 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 2.0))
     await asyncio.sleep(0.5)
     logger.info(f"Creating task2")
-    my_task2 = loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0)
-    )
+    my_task2 = loop.create_task(action_client.send_goal("l_arm", ["l_shoulder_pitch"], [-1.0], 2.0))
     await asyncio.sleep(0.5)
     logger.info(f"Creating task3")
-    my_task3 = loop.create_task(
-        action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0)
-    )
+    my_task3 = loop.create_task(action_client.send_goal("neck", ["neck_roll"], [0.2], 2.0))
     logger.info(f"Gluing tasks and waiting")
     wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
@@ -208,18 +184,12 @@ async def non_blocking_demo_delay(action_client, loop):
         logger.info(f"Result: {result.result.status}")
 
     logger.info(f"$$$$$$ EXAMPLE 3: Going back to start position")
-    my_task1 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0)
-    )
+    my_task1 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [0.0], 2.0))
     await asyncio.sleep(0.5)
-    my_task2 = loop.create_task(
-        action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0)
-    )
+    my_task2 = loop.create_task(action_client.send_goal("l_arm", ["l_shoulder_pitch"], [0.0], 2.0))
     await asyncio.sleep(0.5)
     logger.info(f"Creating task3")
-    my_task3 = loop.create_task(
-        action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0)
-    )
+    my_task3 = loop.create_task(action_client.send_goal("neck", ["neck_roll"], [0.0], 2.0))
     logger.info(f"Gluing tasks and waiting")
     wait_future = asyncio.wait([my_task1, my_task2, my_task3])
     # run event loop
@@ -328,14 +298,10 @@ async def continuous_speed_demo(action_client, loop):
         f"$$$In this first case, a continuation movement is scheduled before the first goto ended. It will be played as soon as the first one is finished"
     )
     logger.info(f"Creating task1")
-    my_task1 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-0.5], 1.0)
-    )
+    my_task1 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-0.5], 1.0))
     await asyncio.sleep(0.5)
     logger.info(f"Creating task2")
-    my_task2 = loop.create_task(
-        action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 1.0)
-    )
+    my_task2 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 1.0))
 
     logger.info(f"Gluing tasks and waiting")
     wait_future = asyncio.wait([my_task1, my_task2])
@@ -364,11 +330,7 @@ async def continuous_speed_demo(action_client, loop):
     )
     await asyncio.sleep(0.5)
     logger.info(f"Creating task2")
-    my_task2 = loop.create_task(
-        action_client.send_goal(
-            "r_arm", ["r_shoulder_pitch"], [-1.0], 1.0, mode="linear"
-        )
-    )
+    my_task2 = loop.create_task(action_client.send_goal("r_arm", ["r_shoulder_pitch"], [-1.0], 1.0, mode="linear"))
 
     logger.info(f"Gluing tasks and waiting")
     wait_future = asyncio.wait([my_task1, my_task2])
@@ -434,12 +396,8 @@ async def all_at_once_demo(action_client, loop):
         p_l[6] = -p_l[6]
 
         movement_duration = 2.0
-        my_task1 = loop.create_task(
-            action_client.send_goal("r_arm", r_joint_names, p_r, movement_duration)
-        )
-        my_task2 = loop.create_task(
-            action_client.send_goal("l_arm", l_joint_names, p_l, movement_duration)
-        )
+        my_task1 = loop.create_task(action_client.send_goal("r_arm", r_joint_names, p_r, movement_duration))
+        my_task2 = loop.create_task(action_client.send_goal("l_arm", l_joint_names, p_l, movement_duration))
         my_task3 = loop.create_task(
             action_client.send_goal(
                 "neck",

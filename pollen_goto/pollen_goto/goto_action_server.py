@@ -12,13 +12,15 @@ from pollen_msgs.action import Goto
 from pollen_msgs.msg import IKRequest
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
+from rclpy.callback_groups import \
+    MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 
-from .interpolation import CartesianSpaceInterpolationMode, JointSpaceInterpolationMode
+from .interpolation import (CartesianSpaceInterpolationMode,
+                            JointSpaceInterpolationMode)
 
 
 class CentralJointStateHandler(Node):
@@ -488,7 +490,6 @@ class GotoActionServer(Node):
                 interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
             callback = self.callback_for_joint_space
 
-        # TODO : FIX MINIMUM_JERK
         elif interpolation_space == "cartesian":
             if mode == "linear":
                 interpolation_mode = CartesianSpaceInterpolationMode.LINEAR

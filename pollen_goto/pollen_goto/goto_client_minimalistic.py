@@ -1,19 +1,15 @@
-import copy
-import rclpy
 import asyncio
-import numpy as np
-
-from action_msgs.msg import GoalStatus
-
-from pollen_msgs.action import Goto
-from sensor_msgs.msg import JointState
-
-
-from rclpy.action import ActionClient
-from rclpy.node import Node
+import copy
 from typing import List
 
+import numpy as np
+import rclpy
+from action_msgs.msg import GoalStatus
+from pollen_msgs.action import Goto
+from rclpy.action import ActionClient
+from rclpy.node import Node
 from reachy_sdk_server.conversion import matrix_to_pose, pose_to_matrix
+from sensor_msgs.msg import JointState
 
 
 class GotoActionClient(Node):
@@ -58,9 +54,7 @@ class GotoActionClient(Node):
 
         self.get_logger().info("Sending goal request...")
 
-        goal_handle = await self.goto_action_client[part].send_goal_async(
-            goal_msg, feedback_callback=feedback_callback
-        )
+        goal_handle = await self.goto_action_client[part].send_goal_async(goal_msg, feedback_callback=feedback_callback)
         self.get_logger().info("feedback_callback setuped")
 
         if not goal_handle.accepted:

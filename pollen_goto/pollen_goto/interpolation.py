@@ -201,10 +201,7 @@ def cartesian_elliptical(
         minor_component = np.dot(trans_interpolated, minor_axis)
 
         # Adjust the ellipse using the secondary radius
-        adjusted_trans = (
-            major_component * major_axis +
-            (minor_component * (secondary_radius / radius)) * minor_axis
-        )
+        adjusted_trans = major_component * major_axis + (minor_component * (secondary_radius / radius)) * minor_axis
         trans_interpolated = adjusted_trans + center
 
         q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
