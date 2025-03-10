@@ -270,10 +270,19 @@ class GotoActionServer(Node):
         cmd_msg = DynamicJointState()
         cmd_msg.header.stamp = self.get_clock().now().to_msg()
 
+        def finger_position_to_opening(position: float) -> float:
+            OPEN_POSITION = np.deg2rad(130)
+            CLOSE_POSITION = np.deg2rad(-5.0)
+            opening = (position - CLOSE_POSITION) / (OPEN_POSITION - CLOSE_POSITION)
+            opening = np.clip(opening, 0, 1)
+            return opening
+
         for j, p in zip(joints, points):
             cmd_msg.joint_names.append(j)
             inter = InterfaceValue()
             inter.interface_names.append("position")
+            if j.endswith("finger"):
+                p = finger_position_to_opening(p)
             inter.values.append(p)
             cmd_msg.interface_values.append(inter)
 
@@ -522,6 +531,8 @@ def main(args=None):
     r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True)
     l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True)
     neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group, init_kinematics=True)
+    r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, callback_group)
+    l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, callback_group)
     antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, callback_group)
     antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, callback_group)
     mult_executor = MultiThreadedExecutor()
@@ -529,6 +540,8 @@ def main(args=None):
     mult_executor.add_node(r_arm_goto_action_server)
     mult_executor.add_node(l_arm_goto_action_server)
     mult_executor.add_node(neck_goto_action_server)
+    mult_executor.add_node(r_hand_goto_action_server)
+    mult_executor.add_node(l_hand_goto_action_server)
     mult_executor.add_node(antenna_right_goto_action_server)
     mult_executor.add_node(antenna_left_goto_action_server)
     executor_thread = threading.Thread(target=mult_executor.spin, daemon=True)
