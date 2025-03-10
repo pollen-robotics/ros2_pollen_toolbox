@@ -12,13 +12,15 @@ from pollen_msgs.action import Goto
 from pollen_msgs.msg import IKRequest
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
+from rclpy.callback_groups import \
+    MutuallyExclusiveCallbackGroup  # ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 
-from .interpolation import CartesianSpaceInterpolationMode, JointSpaceInterpolationMode
+from .interpolation import (CartesianSpaceInterpolationMode,
+                            JointSpaceInterpolationMode)
 
 
 class CentralJointStateHandler(Node):
@@ -109,17 +111,10 @@ class GotoActionServer(Node):
         )
 
         if init_kinematics:
-            high_freq_qos_profile = QoSProfile(
-                reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
-                history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
-                depth=1,  # Minimal depth, for the latest message
-                # Other QoS settings can be adjusted as needed
-            )
-
             self.arm_target_pose_pub = self.create_publisher(
                 msg_type=IKRequest,
                 topic=f"/{name_prefix}/ik_target_pose",
-                qos_profile=high_freq_qos_profile,
+                qos_profile=5,
             )
 
             if name_prefix == "neck":
@@ -186,7 +181,7 @@ class GotoActionServer(Node):
         goal_vel=None,
         starting_acc=None,
         goal_acc=None,
-        interpolation_mode: JointSpaceInterpolationMode = JointSpaceInterpolationMode.MINIMUM_JERK,
+        interpolation_mode: JointSpaceInterpolationMode = JointSpaceInterpolationMode.MINIMUM_JERK_FUNC,
     ):
         return interpolation_mode(
             starting_pos,
@@ -203,7 +198,7 @@ class GotoActionServer(Node):
         duration,
         starting_pose,
         goal_pose,
-        interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.LINEAR,
+        interpolation_mode: CartesianSpaceInterpolationMode = CartesianSpaceInterpolationMode.LINEAR_FUNC,
         arc_direction: Optional[str] = "above",
         secondary_radius: Optional[float] = None,
     ):
@@ -386,7 +381,6 @@ class GotoActionServer(Node):
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         sampling_freq = goto_request.sampling_freq
-        safety_on = goto_request.safety_on
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -440,7 +434,6 @@ class GotoActionServer(Node):
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
         sampling_freq = goto_request.sampling_freq
-        safety_on = goto_request.safety_on
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -481,29 +474,29 @@ class GotoActionServer(Node):
 
         if interpolation_space == "joints":
             if mode == "linear":
-                interpolation_mode = JointSpaceInterpolationMode.LINEAR
+                interpolation_mode = JointSpaceInterpolationMode.LINEAR_FUNC
             elif mode == "minimum_jerk":
-                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK_FUNC
             else:
                 self.get_logger().warn(f"Unknown interpolation mode {mode} defaulting to minimum_jerk")
-                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+                interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK_FUNC
             callback = self.callback_for_joint_space
 
         elif interpolation_space == "cartesian":
             if mode == "linear":
-                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
+                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR_FUNC
             elif mode == "minimum_jerk":
-                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK
+                interpolation_mode = CartesianSpaceInterpolationMode.MINIMUM_JERK_FUNC
             elif mode == "elliptical":
-                interpolation_mode = CartesianSpaceInterpolationMode.ELLIPTICAL
+                interpolation_mode = CartesianSpaceInterpolationMode.ELLIPTICAL_FUNC
             else:
                 self.get_logger().warn(f"Unknown interpolation mode {mode} defaulting to linear")
-                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR
+                interpolation_mode = CartesianSpaceInterpolationMode.LINEAR_FUNC
             callback = self.callback_for_cartesian_space
 
         else:
             self.get_logger().warn(f"Unknown interpolation space {interpolation_space} defaulting to joints")
-            interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK
+            interpolation_mode = JointSpaceInterpolationMode.MINIMUM_JERK_FUNC
             callback = self.callback_for_joint_space
 
         ret = callback(goal_handle, interpolation_mode)
