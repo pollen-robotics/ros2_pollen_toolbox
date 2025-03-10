@@ -135,11 +135,14 @@ def cartesian_minimum_jerk(
 
     coeffs = [a0, a1, a2, X[0], X[1], X[2]]
 
+    def j(t: float) -> np.ndarray:
+        return 10 * t**3 - 15 * t**4 + 6 * t**5
+
     def f(t: float) -> np.ndarray:
         if t > duration:
             return goal_pose
         trans_interpolated = np.sum([c * t**i for i, c in enumerate(coeffs)], axis=0)
-        q_interpolated = Quaternion.slerp(q_origin, q_target, t / duration)
+        q_interpolated = Quaternion.slerp(q_origin, q_target, j(t / duration))
         pose = recompose_pose(q_interpolated, trans_interpolated)
         return pose
 
@@ -213,15 +216,15 @@ def cartesian_elliptical(
 
 
 class JointSpaceInterpolationMode(Enum):
-    """Inteprolation Mode enumeration."""
+    """Interpolation Mode enumeration."""
 
-    LINEAR: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = linear
-    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = minimum_jerk
+    LINEAR_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = linear
+    MINIMUM_JERK_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = minimum_jerk
 
 
 class CartesianSpaceInterpolationMode(Enum):
-    """Inteprolation Mode enumeration."""
+    """Interpolation Mode enumeration."""
 
-    LINEAR: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_linear
-    MINIMUM_JERK: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_minimum_jerk
-    ELLIPTICAL: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_elliptical
+    LINEAR_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_linear
+    MINIMUM_JERK_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_minimum_jerk
+    ELLIPTICAL_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = cartesian_elliptical
