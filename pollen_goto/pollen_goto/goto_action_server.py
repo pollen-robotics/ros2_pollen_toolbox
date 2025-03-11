@@ -112,10 +112,17 @@ class GotoActionServer(Node):
         )
 
         if init_kinematics:
+
+            high_freq_qos_profile = QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,  # Prioritizes speed over guaranteed delivery
+                history=HistoryPolicy.KEEP_LAST,  # Keeps only a fixed number of messages
+                depth=1,  # Minimal depth, for the latest message
+                # Other QoS settings can be adjusted as needed
+            )
             self.arm_target_pose_pub = self.create_publisher(
                 msg_type=IKRequest,
                 topic=f"/{name_prefix}/ik_target_pose",
-                qos_profile=5,
+                qos_profile=high_freq_qos_profile,
             )
 
             if name_prefix == "neck":
