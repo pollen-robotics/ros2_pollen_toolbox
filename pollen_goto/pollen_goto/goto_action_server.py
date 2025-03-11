@@ -88,9 +88,6 @@ class CentralJointStateHandler(Node):
 class CentralJointCommandSender(Node):
     def __init__(self, shared_callback_group):
         super().__init__("central_goto_action_sender")
-        self.goto_action_client = self.create_client(Goto, "/goto", callback_group=shared_callback_group)
-        self.goto_action_client.wait_for_service()
-
         self.dynamic_joint_commands_pub = self.create_publisher(
             msg_type=DynamicJointState,
             topic="/dynamic_joint_commands",
@@ -99,9 +96,11 @@ class CentralJointCommandSender(Node):
         )
 
         self.cmd_dict = {}
-        self._lock = threading.Lock()
+        self.lock = threading.Lock()
+        self.publish_thread = threading.Thread(target=self.publish_commands, daemon=True)
+        self.publish_thread.start()
 
-    def publish_commands(self, freq=100):
+    def publish_commands(self, freq=150):
         dt = 1 / freq
 
         while True:
@@ -113,7 +112,7 @@ class CentralJointCommandSender(Node):
         cmd_msg = DynamicJointState()
         cmd_msg.header.stamp = self.get_clock().now().to_msg()
 
-        with self._lock:
+        with self.lock:
             for j, p in self.cmd_dict.items():
                 cmd_msg.joint_names.append(j)
                 inter = InterfaceValue()
@@ -129,7 +128,15 @@ class CentralJointCommandSender(Node):
 
 
 class GotoActionServer(Node):
-    def __init__(self, name_prefix, joint_state_handler, joint_command_sender, shared_callback_group, init_kinematics=False, list_of_joints=None):
+    def __init__(
+            self,
+            name_prefix,
+            joint_state_handler,
+            joint_command_sender,
+            shared_callback_group,
+            init_kinematics=False,
+            list_of_joints=None
+            ):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.name_prefix = name_prefix
         self.joint_state_handler = joint_state_handler
@@ -615,6 +622,7 @@ def main(args=None):
     antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, joint_command_sender, callback_group)
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
+    mult_executor.add_node(joint_command_sender)
     mult_executor.add_node(r_arm_goto_action_server)
     mult_executor.add_node(l_arm_goto_action_server)
     mult_executor.add_node(neck_goto_action_server)
