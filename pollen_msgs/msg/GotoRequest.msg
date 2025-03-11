@@ -8,7 +8,7 @@ sensor_msgs/JointState goal_joints
 geometry_msgs/PoseStamped goal_pose
 
 # 2 spaces are supported: "cartesian" and joints"
-string interpolation_space
+string interpolation_space "joints"
 
 # As of writting 3 modes are supported: "linear", "minjerk" and "elliptical".
 string mode

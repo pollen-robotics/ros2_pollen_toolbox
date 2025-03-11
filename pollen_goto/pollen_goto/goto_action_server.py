@@ -86,7 +86,7 @@ class CentralJointStateHandler(Node):
 
 
 class GotoActionServer(Node):
-    def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False):
+    def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False, list_of_joints=None):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.joint_state_handler = joint_state_handler
         self._goal_queue = Queue()
@@ -126,6 +126,8 @@ class GotoActionServer(Node):
             )
             self.forward_sub.wait_for_service()
 
+            self.list_of_joints = list_of_joints
+
         # Not sending the feedback every tick
         self.nb_commands_per_feedback = 10
         self.get_logger().info(f"Goto action server {name_prefix} init.")
@@ -143,19 +145,38 @@ class GotoActionServer(Node):
         self.get_logger().debug(f"Received goal request: {goal_request.request}")
         request = goal_request.request  # This is of type pollen_msgs/GotoRequest
         duration = request.duration
-        if duration <= 0.001:
-            self.get_logger().debug(f"Invalid duration {duration}")
-            return GoalResponse.REJECT
+        try:
+            if duration <= 0.001:
+                self.get_logger().debug(f"Invalid duration {duration}")
+                return GoalResponse.REJECT
+            elif request.sampling_freq <= 0:
+                self.get_logger().debug(f"Invalid sampling_freq {request.sampling_freq}")
+                return GoalResponse.REJECT
+            elif request.interpolation_space not in ["joints", "cartesian"]:
+                self.get_logger().debug(f"Invalid interpolation space {request.interpolation_space}")
+                return GoalResponse.REJECT
+            elif request.interpolation_space == "joints" and (
+                len(request.goal_joints.name) < 1 or (len(request.goal_joints.name) != len(request.goal_joints.position))
+            ):
+                self.get_logger().debug(
+                    f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
+                )
+                return GoalResponse.REJECT
+            elif request.mode not in ["linear", "minimum_jerk", "elliptical"]:
+                self.get_logger().debug(f"Invalid mode {request.mode}")
+                return GoalResponse.REJECT
+            
 
-        elif request.interpolation_space == "joints" and (
-            len(request.goal_joints.name) < 1 or (len(request.goal_joints.name) != len(request.goal_joints.position))
-        ):
-            self.get_logger().debug(
-                f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
-            )
-            return GoalResponse.REJECT
+            for joint_name in request.goal_joints.name:
+                if joint_name not in self.joint_state_handler.joint_state:
+                    self.get_logger().debug(f"Invalid joint name {joint_name}")
+                    return GoalResponse.REJECT
 
-        return GoalResponse.ACCEPT
+            return GoalResponse.ACCEPT
+
+        except Exception as e:
+            self.get_logger().error(f"Error in goal_callback: {e}")
+            return GoalResponse.REJECT
 
     def handle_accepted_callback(self, goal_handle):
         self._goal_queue.put(goal_handle)
@@ -248,7 +269,7 @@ class GotoActionServer(Node):
 
     def prepare_data_cartesian_space(self, goto_request):
         js = JointState()
-        for joint_name in goto_request.goal_joints.name:
+        for joint_name in self.list_of_joints:
             js.name.append(joint_name)
             js.position.append(self.joint_state_handler.joint_state[joint_name]["position"])
 
@@ -528,8 +549,26 @@ def main(args=None):
     callback_group = MutuallyExclusiveCallbackGroup()
 
     joint_state_handler = CentralJointStateHandler(callback_group)
-    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True)
-    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True)
+    r_joint_names = [
+        "r_shoulder_pitch",
+        "r_shoulder_roll",
+        "r_elbow_yaw",
+        "r_elbow_pitch",
+        "r_wrist_roll",
+        "r_wrist_pitch",
+        "r_wrist_yaw",
+    ]
+    l_joint_names = [
+        "l_shoulder_pitch",
+        "l_shoulder_roll",
+        "l_elbow_yaw",
+        "l_elbow_pitch",
+        "l_wrist_roll",
+        "l_wrist_pitch",
+        "l_wrist_yaw",
+    ]
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=r_joint_names)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=l_joint_names)
     neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group, init_kinematics=True)
     r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, callback_group)
     l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, callback_group)
