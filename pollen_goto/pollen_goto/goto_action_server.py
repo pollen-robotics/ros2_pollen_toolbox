@@ -88,6 +88,7 @@ class CentralJointStateHandler(Node):
 class GotoActionServer(Node):
     def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False, list_of_joints=None):
         super().__init__(f"{name_prefix}_goto_action_server")
+        self.name_prefix = name_prefix
         self.joint_state_handler = joint_state_handler
         self._goal_queue = Queue()
         self.execution_ongoing = Event()
@@ -147,29 +148,31 @@ class GotoActionServer(Node):
         duration = request.duration
         try:
             if duration <= 0.001:
-                self.get_logger().debug(f"Invalid duration {duration}")
+                self.get_logger().warning(f"Invalid duration {duration}")
                 return GoalResponse.REJECT
             elif request.sampling_freq <= 0:
-                self.get_logger().debug(f"Invalid sampling_freq {request.sampling_freq}")
+                self.get_logger().warning(f"Invalid sampling_freq {request.sampling_freq}")
                 return GoalResponse.REJECT
             elif request.interpolation_space not in ["joints", "cartesian"]:
-                self.get_logger().debug(f"Invalid interpolation space {request.interpolation_space}")
+                self.get_logger().warning(f"Invalid interpolation space {request.interpolation_space}")
                 return GoalResponse.REJECT
             elif request.interpolation_space == "joints" and (
                 len(request.goal_joints.name) < 1 or (len(request.goal_joints.name) != len(request.goal_joints.position))
             ):
-                self.get_logger().debug(
+                self.get_logger().warning(
                     f"Invalid goal. Nb joint names={len(request.goal_joints.name)}, nb positions={len(request.goal_joints.position)}"
                 )
                 return GoalResponse.REJECT
-            elif request.mode not in ["linear", "minimum_jerk", "elliptical"]:
-                self.get_logger().debug(f"Invalid mode {request.mode}")
+            elif request.interpolation_space == "cartesian" and self.list_of_joints is None:
+                self.get_logger().warning(f"{self.name_prefix} does not accept cartesian space requests")
                 return GoalResponse.REJECT
-            
+            elif request.mode not in ["linear", "minimum_jerk", "elliptical"]:
+                self.get_logger().warning(f"Invalid mode {request.mode}")
+                return GoalResponse.REJECT
 
             for joint_name in request.goal_joints.name:
                 if joint_name not in self.joint_state_handler.joint_state:
-                    self.get_logger().debug(f"Invalid joint name {joint_name}")
+                    self.get_logger().warning(f"Invalid joint name {joint_name}")
                     return GoalResponse.REJECT
 
             return GoalResponse.ACCEPT
