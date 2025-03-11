@@ -85,11 +85,55 @@ class CentralJointStateHandler(Node):
         return cmd_msg
 
 
+class CentralJointCommandSender(Node):
+    def __init__(self, shared_callback_group):
+        super().__init__("central_goto_action_sender")
+        self.goto_action_client = self.create_client(Goto, "/goto", callback_group=shared_callback_group)
+        self.goto_action_client.wait_for_service()
+
+        self.dynamic_joint_commands_pub = self.create_publisher(
+            msg_type=DynamicJointState,
+            topic="/dynamic_joint_commands",
+            qos_profile=5,
+            callback_group=shared_callback_group,
+        )
+
+        self.cmd_dict = {}
+        self._lock = threading.Lock()
+
+    def publish_commands(self, freq=100):
+        dt = 1 / freq
+
+        while True:
+            t0_loop = time.time()
+            self.cmd_joints_pub()
+            time.sleep(max(0, dt - (time.time() - t0_loop)))
+
+    def cmd_joints_pub(self):
+        cmd_msg = DynamicJointState()
+        cmd_msg.header.stamp = self.get_clock().now().to_msg()
+
+        with self._lock:
+            for j, p in self.cmd_dict.items():
+                cmd_msg.joint_names.append(j)
+                inter = InterfaceValue()
+                inter.interface_names.append("position")
+                inter.values.append(p)
+                cmd_msg.interface_values.append(inter)
+            self.cmd_dict = {}
+
+        self.dynamic_joint_commands_pub.publish(cmd_msg)
+
+    def add_joint_to_cmd(self, joint, position):
+        self.cmd_dict[joint] = position
+
+
 class GotoActionServer(Node):
-    def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False, list_of_joints=None):
+    def __init__(self, name_prefix, joint_state_handler, joint_command_sender, shared_callback_group, init_kinematics=False, list_of_joints=None):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.name_prefix = name_prefix
         self.joint_state_handler = joint_state_handler
+        self.joint_command_sender = joint_command_sender
         self._goal_queue = Queue()
         self.execution_ongoing = Event()
 
@@ -102,13 +146,6 @@ class GotoActionServer(Node):
             callback_group=shared_callback_group,
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
-        )
-
-        self.dynamic_joint_commands_pub = self.create_publisher(
-            msg_type=DynamicJointState,
-            topic="/dynamic_joint_commands",
-            qos_profile=5,
-            callback_group=shared_callback_group,
         )
 
         if init_kinematics:
@@ -298,9 +335,6 @@ class GotoActionServer(Node):
             )
 
     def cmd_joints_pub(self, joints, points):
-        cmd_msg = DynamicJointState()
-        cmd_msg.header.stamp = self.get_clock().now().to_msg()
-
         def finger_position_to_opening(position: float) -> float:
             OPEN_POSITION = np.deg2rad(130)
             CLOSE_POSITION = np.deg2rad(-5.0)
@@ -309,15 +343,9 @@ class GotoActionServer(Node):
             return opening
 
         for j, p in zip(joints, points):
-            cmd_msg.joint_names.append(j)
-            inter = InterfaceValue()
-            inter.interface_names.append("position")
             if j.endswith("finger"):
                 p = finger_position_to_opening(p)
-            inter.values.append(p)
-            cmd_msg.interface_values.append(inter)
-
-        self.dynamic_joint_commands_pub.publish(cmd_msg)
+            self.joint_command_sender.add_joint_to_cmd(j, p)
 
     def cmd_pose_pub(self, pose):
         req = IKRequest()
@@ -559,6 +587,7 @@ def main(args=None):
     callback_group = MutuallyExclusiveCallbackGroup()
 
     joint_state_handler = CentralJointStateHandler(callback_group)
+    joint_command_sender = CentralJointCommandSender(callback_group)
     r_joint_names = [
         "r_shoulder_pitch",
         "r_shoulder_roll",
@@ -577,13 +606,13 @@ def main(args=None):
         "l_wrist_pitch",
         "l_wrist_yaw",
     ]
-    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=r_joint_names)
-    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=l_joint_names)
-    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group, init_kinematics=True)
-    r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, callback_group)
-    l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, callback_group)
-    antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, callback_group)
-    antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, callback_group)
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True, list_of_joints=r_joint_names)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True, list_of_joints=l_joint_names)
+    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True)
+    r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, joint_command_sender, callback_group)
+    l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, joint_command_sender, callback_group)
+    antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, joint_command_sender, callback_group)
+    antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, joint_command_sender, callback_group)
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
     mult_executor.add_node(r_arm_goto_action_server)
