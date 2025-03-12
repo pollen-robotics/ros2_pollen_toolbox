@@ -85,11 +85,62 @@ class CentralJointStateHandler(Node):
         return cmd_msg
 
 
+class CentralJointCommandSender(Node):
+    def __init__(self, shared_callback_group):
+        super().__init__("central_goto_action_sender")
+        self.dynamic_joint_commands_pub = self.create_publisher(
+            msg_type=DynamicJointState,
+            topic="/dynamic_joint_commands",
+            qos_profile=5,
+            callback_group=shared_callback_group,
+        )
+        self.sampling_freq = 150.0
+        self.cmd_dict = {}
+        self.lock = threading.Lock()
+        self.publish_thread = threading.Thread(target=self.publish_commands, daemon=True)
+        self.publish_thread.start()
+
+    def publish_commands(self):
+        dt = 1 / self.sampling_freq
+
+        while True:
+            t0_loop = time.time()
+            self.cmd_joints_pub()
+            time.sleep(max(0, dt - (time.time() - t0_loop)))
+
+    def cmd_joints_pub(self):
+        cmd_msg = DynamicJointState()
+        cmd_msg.header.stamp = self.get_clock().now().to_msg()
+
+        with self.lock:
+            for j, p in self.cmd_dict.items():
+                cmd_msg.joint_names.append(j)
+                inter = InterfaceValue()
+                inter.interface_names.append("position")
+                inter.values.append(p)
+                cmd_msg.interface_values.append(inter)
+            self.cmd_dict = {}
+
+        self.dynamic_joint_commands_pub.publish(cmd_msg)
+
+    def add_joint_to_cmd(self, joint, position):
+        self.cmd_dict[joint] = position
+
+
 class GotoActionServer(Node):
-    def __init__(self, name_prefix, joint_state_handler, shared_callback_group, init_kinematics=False, list_of_joints=None):
+    def __init__(
+            self,
+            name_prefix,
+            joint_state_handler,
+            joint_command_sender,
+            shared_callback_group,
+            init_kinematics=False,
+            list_of_joints=None
+            ):
         super().__init__(f"{name_prefix}_goto_action_server")
         self.name_prefix = name_prefix
         self.joint_state_handler = joint_state_handler
+        self.joint_command_sender = joint_command_sender
         self._goal_queue = Queue()
         self.execution_ongoing = Event()
 
@@ -102,13 +153,6 @@ class GotoActionServer(Node):
             callback_group=shared_callback_group,
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
-        )
-
-        self.dynamic_joint_commands_pub = self.create_publisher(
-            msg_type=DynamicJointState,
-            topic="/dynamic_joint_commands",
-            qos_profile=5,
-            callback_group=shared_callback_group,
         )
 
         if init_kinematics:
@@ -156,9 +200,6 @@ class GotoActionServer(Node):
         try:
             if duration <= 0.001:
                 self.get_logger().warning(f"Invalid duration {duration}")
-                return GoalResponse.REJECT
-            elif request.sampling_freq <= 0:
-                self.get_logger().warning(f"Invalid sampling_freq {request.sampling_freq}")
                 return GoalResponse.REJECT
             elif request.interpolation_space not in ["joints", "cartesian"]:
                 self.get_logger().warning(f"Invalid interpolation space {request.interpolation_space}")
@@ -298,9 +339,6 @@ class GotoActionServer(Node):
             )
 
     def cmd_joints_pub(self, joints, points):
-        cmd_msg = DynamicJointState()
-        cmd_msg.header.stamp = self.get_clock().now().to_msg()
-
         def finger_position_to_opening(position: float) -> float:
             OPEN_POSITION = np.deg2rad(130)
             CLOSE_POSITION = np.deg2rad(-5.0)
@@ -309,15 +347,9 @@ class GotoActionServer(Node):
             return opening
 
         for j, p in zip(joints, points):
-            cmd_msg.joint_names.append(j)
-            inter = InterfaceValue()
-            inter.interface_names.append("position")
             if j.endswith("finger"):
                 p = finger_position_to_opening(p)
-            inter.values.append(p)
-            cmd_msg.interface_values.append(inter)
-
-        self.dynamic_joint_commands_pub.publish(cmd_msg)
+            self.joint_command_sender.add_joint_to_cmd(j, p)
 
     def cmd_pose_pub(self, pose):
         req = IKRequest()
@@ -343,13 +375,13 @@ class GotoActionServer(Node):
                 raise
         return indices
 
-    def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str, sampling_freq=100):
-        length = round(duration * sampling_freq)
+    def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str):
+        length = round(duration * self.joint_command_sender.sampling_freq)
         if length < 1:
-            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
+            raise ValueError(f"Goto length too short! (incoherent duration {duration})!")
 
         t0 = time.time()
-        dt = 1 / sampling_freq
+        dt = 1 / self.joint_command_sender.sampling_freq
 
         commands_sent = 0
         while True:
@@ -420,7 +452,6 @@ class GotoActionServer(Node):
 
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
-        sampling_freq = goto_request.sampling_freq
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -462,7 +493,6 @@ class GotoActionServer(Node):
             duration,
             goal_handle,
             interpolation_space="joints",
-            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
@@ -473,7 +503,6 @@ class GotoActionServer(Node):
 
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
-        sampling_freq = goto_request.sampling_freq
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -500,7 +529,6 @@ class GotoActionServer(Node):
             duration,
             goal_handle,
             interpolation_space="cartesian",
-            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
@@ -559,6 +587,7 @@ def main(args=None):
     callback_group = MutuallyExclusiveCallbackGroup()
 
     joint_state_handler = CentralJointStateHandler(callback_group)
+    joint_command_sender = CentralJointCommandSender(callback_group)
     r_joint_names = [
         "r_shoulder_pitch",
         "r_shoulder_roll",
@@ -577,15 +606,16 @@ def main(args=None):
         "l_wrist_pitch",
         "l_wrist_yaw",
     ]
-    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=r_joint_names)
-    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, callback_group, init_kinematics=True, list_of_joints=l_joint_names)
-    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, callback_group, init_kinematics=True)
-    r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, callback_group)
-    l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, callback_group)
-    antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, callback_group)
-    antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, callback_group)
+    r_arm_goto_action_server = GotoActionServer("r_arm", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True, list_of_joints=r_joint_names)
+    l_arm_goto_action_server = GotoActionServer("l_arm", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True, list_of_joints=l_joint_names)
+    neck_goto_action_server = GotoActionServer("neck", joint_state_handler, joint_command_sender, callback_group, init_kinematics=True)
+    r_hand_goto_action_server = GotoActionServer("r_hand", joint_state_handler, joint_command_sender, callback_group)
+    l_hand_goto_action_server = GotoActionServer("l_hand", joint_state_handler, joint_command_sender, callback_group)
+    antenna_right_goto_action_server = GotoActionServer("antenna_right", joint_state_handler, joint_command_sender, callback_group)
+    antenna_left_goto_action_server = GotoActionServer("antenna_left", joint_state_handler, joint_command_sender, callback_group)
     mult_executor = MultiThreadedExecutor()
     mult_executor.add_node(joint_state_handler)
+    mult_executor.add_node(joint_command_sender)
     mult_executor.add_node(r_arm_goto_action_server)
     mult_executor.add_node(l_arm_goto_action_server)
     mult_executor.add_node(neck_goto_action_server)
