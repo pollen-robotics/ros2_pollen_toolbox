@@ -94,12 +94,11 @@ class CentralJointCommandSender(Node):
             qos_profile=5,
             callback_group=shared_callback_group,
         )
-
+        self.sampling_freq = 150.0
         self.cmd_dict = {}
         self.lock = threading.Lock()
         self.publish_thread = threading.Thread(target=self.publish_commands, daemon=True)
         self.publish_thread.start()
-        self.sampling_freq = 150
 
     def publish_commands(self):
         dt = 1 / self.sampling_freq

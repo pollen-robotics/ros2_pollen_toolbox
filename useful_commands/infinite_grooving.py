@@ -36,6 +36,7 @@ def build_pose_matrix(x: float, y: float, z: float) -> npt.NDArray[np.float64]:
         ]
     )
 
+
 def set_speed_and_torque_limits(reachy, torque_limit=100, speed_limit=25) -> None:
     """Set back speed and torque limits of all parts to given value."""
     if not reachy.info:
@@ -47,6 +48,7 @@ def set_speed_and_torque_limits(reachy, torque_limit=100, speed_limit=25) -> Non
             part.set_speed_limits(speed_limit)
             part.set_torque_limits(torque_limit)
     time.sleep(0.5)
+
 
 def draw_square(reachy: ReachySDK) -> None:
     """Draw a square path with Reachy's right arm in 3D space.
@@ -78,12 +80,8 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.goto([20, -10, 0])
     reachy.head.l_antenna.goto(20)
     reachy.head.r_antenna.goto(-20)
-    reachy.tripod.set_height(1.2)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    
-    r_current_pos = reachy.r_arm.forward_kinematics()
-    l_current_pos = reachy.l_arm.forward_kinematics()
 
     # Going from B to C
     r_target_pose = build_pose_matrix(0.4, -0.3, 0)
@@ -95,13 +93,9 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.goto([-10, 30, 10])
     reachy.head.l_antenna.goto(50)
     reachy.head.r_antenna.goto(-50)
-    reachy.tripod.set_height(1.0)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    
-    r_current_pos = reachy.r_arm.forward_kinematics()
-    l_current_pos = reachy.l_arm.forward_kinematics()
-    
+
     # Going from C to D
     r_target_pose = build_pose_matrix(0.4, -0.3, -0.2)
     l_target_pose = build_pose_matrix(0.4, 0.3, -0.2)
@@ -112,13 +106,9 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.goto([0, 15, -10])
     reachy.head.l_antenna.goto(-20)
     reachy.head.r_antenna.goto(20)
-    reachy.tripod.set_height(1.2)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    
-    r_current_pos = reachy.r_arm.forward_kinematics()
-    l_current_pos = reachy.l_arm.forward_kinematics()
-    
+
     # Going from D to A
     r_target_pose = build_pose_matrix(0.4, -0.5, -0.2)
     l_target_pose = build_pose_matrix(0.4, 0.5, -0.2)
@@ -129,14 +119,9 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.goto([15, 5, 20])
     reachy.head.l_antenna.goto(0)
     reachy.head.r_antenna.goto(0)
-    reachy.tripod.set_height(1.0)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    
-    r_current_pos = reachy.r_arm.forward_kinematics()
-    l_current_pos = reachy.l_arm.forward_kinematics()
 
-    
 
 def goto_to_point_A(reachy: ReachySDK) -> None:
     """Move Reachy's right arm to Point A in 3D space.
@@ -158,8 +143,6 @@ def goto_to_point_A(reachy: ReachySDK) -> None:
     reachy.l_arm.goto(l_joints_positions, duration=4, wait=True)
 
 
-
-
 if __name__ == "__main__":
     print("Reachy SDK example: draw square")
 
@@ -171,7 +154,7 @@ if __name__ == "__main__":
 
     print("Turning on Reachy")
     reachy.turn_on()
-    
+
     set_speed_and_torque_limits(reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT)
 
     time.sleep(0.2)
@@ -187,7 +170,7 @@ if __name__ == "__main__":
 
         reachy.r_arm.gripper.close()
         reachy.l_arm.gripper.close()
-        
+
         while True:
             print("Draw a square with the right arm ...")
             draw_square(reachy)
@@ -202,11 +185,10 @@ if __name__ == "__main__":
         # wait_for_pose_to_finish(goto_ids)
         reachy.r_arm.gripper.open()
         reachy.l_arm.gripper.open()
-        
+
         print("Turning off Reachy")
         reachy.turn_off()
 
         time.sleep(0.2)
 
         exit("Exiting example")
-
