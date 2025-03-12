@@ -13,9 +13,6 @@ string interpolation_space "joints"
 # As of writting 3 modes are supported: "linear", "minjerk" and "elliptical".
 string mode
 
-# The sampling frequency of the trajectory. If not set, the action server will chose the sampling frequency.
-float64 sampling_freq
-
 # For elliptical interpolation only.
 string arc_direction
 float64 secondary_radius

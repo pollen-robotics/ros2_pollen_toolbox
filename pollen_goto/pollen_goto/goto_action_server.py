@@ -99,9 +99,10 @@ class CentralJointCommandSender(Node):
         self.lock = threading.Lock()
         self.publish_thread = threading.Thread(target=self.publish_commands, daemon=True)
         self.publish_thread.start()
+        self.sampling_freq = 150
 
-    def publish_commands(self, freq=150):
-        dt = 1 / freq
+    def publish_commands(self):
+        dt = 1 / self.sampling_freq
 
         while True:
             t0_loop = time.time()
@@ -200,9 +201,6 @@ class GotoActionServer(Node):
         try:
             if duration <= 0.001:
                 self.get_logger().warning(f"Invalid duration {duration}")
-                return GoalResponse.REJECT
-            elif request.sampling_freq <= 0:
-                self.get_logger().warning(f"Invalid sampling_freq {request.sampling_freq}")
                 return GoalResponse.REJECT
             elif request.interpolation_space not in ["joints", "cartesian"]:
                 self.get_logger().warning(f"Invalid interpolation space {request.interpolation_space}")
@@ -378,13 +376,13 @@ class GotoActionServer(Node):
                 raise
         return indices
 
-    def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str, sampling_freq=100):
-        length = round(duration * sampling_freq)
+    def goto_time(self, traj_func, joints, duration, goal_handle, interpolation_space: str):
+        length = round(duration * self.joint_command_sender.sampling_freq)
         if length < 1:
-            raise ValueError(f"Goto length too short! (incoherent duration {duration} or sampling_freq {sampling_freq})!")
+            raise ValueError(f"Goto length too short! (incoherent duration {duration})!")
 
         t0 = time.time()
-        dt = 1 / sampling_freq
+        dt = 1 / self.joint_command_sender.sampling_freq
 
         commands_sent = 0
         while True:
@@ -455,7 +453,6 @@ class GotoActionServer(Node):
 
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
-        sampling_freq = goto_request.sampling_freq
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -497,7 +494,6 @@ class GotoActionServer(Node):
             duration,
             goal_handle,
             interpolation_space="joints",
-            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
@@ -508,7 +504,6 @@ class GotoActionServer(Node):
 
         goto_request = goal_handle.request.request  # pollen_msgs/GotoRequest
         duration = goto_request.duration
-        sampling_freq = goto_request.sampling_freq
 
         # try:
         self.get_logger().info(f"Executing goal...")
@@ -535,7 +530,6 @@ class GotoActionServer(Node):
             duration,
             goal_handle,
             interpolation_space="cartesian",
-            sampling_freq=sampling_freq,
         )
         self.get_logger().debug(f"Timestamp: {1000*(time.time() - start_time):.2f}ms after goto")
 
