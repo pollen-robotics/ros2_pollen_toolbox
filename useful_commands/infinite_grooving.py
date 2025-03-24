@@ -153,13 +153,14 @@ if __name__ == "__main__":
     print("Reachy SDK example: draw square")
 
     logging.basicConfig(level=logging.INFO)
-    reachy = ReachySDK(host="localhost")
+    reachy = ReachySDK(host="192.168.10.109")
 
     if not reachy.is_connected:
         exit("Reachy is not connected.")
 
     print("Turning on Reachy")
     reachy.turn_on()
+    reachy.mobile_base.reset_odometry()
 
     set_speed_and_torque_limits(reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT)
 
