@@ -82,6 +82,7 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(-20)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
+    reachy.mobile_base.goto(x=0.0, y=0.0, theta=30.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
 
     # Going from B to C
     r_target_pose = build_pose_matrix(0.4, -0.3, 0)
@@ -95,6 +96,7 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(-50)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
+    reachy.mobile_base.goto(x=0.0, y=0.0, theta=0.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
 
     # Going from C to D
     r_target_pose = build_pose_matrix(0.4, -0.3, -0.2)
@@ -108,6 +110,8 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(20)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
+    reachy.mobile_base.goto(x=0.0, y=0.0, theta=-30.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
+
 
     # Going from D to A
     r_target_pose = build_pose_matrix(0.4, -0.5, -0.2)
@@ -121,6 +125,8 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(0)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
+    reachy.mobile_base.goto(x=0.0, y=0.0, theta=0.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
+
 
 
 def goto_to_point_A(reachy: ReachySDK) -> None:
