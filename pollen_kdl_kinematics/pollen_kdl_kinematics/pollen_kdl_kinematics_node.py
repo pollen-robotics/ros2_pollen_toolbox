@@ -333,11 +333,14 @@ class PollenKdlKinematics(LifecycleNode):
 
         reachy_config = ReachyConfig(no_print=True)
 
+        r_orbita3D_max_angle = reachy_config.config["right_wrist_poulpe3d"]['config']['orientation_limits']['orbita3D_max_angle']
+        l_orbita3D_max_angle = reachy_config.config["left_wrist_poulpe3d"]['config']['orientation_limits']['orbita3D_max_angle']
         self.control_ik = ControlIK(
             logger=self.logger,
             current_joints=current_joints,
             current_pose=current_pose,
             urdf=self.urdf,
+            orbita3D_max_angle=[r_orbita3D_max_angle, l_orbita3D_max_angle],
             reachy_model=reachy_config.model,
             is_dvt=reachy_config.dvt or reachy_config.pvt,
         )
