@@ -4,6 +4,7 @@ from functools import partial
 from threading import Event
 from typing import List
 
+import tempfile
 import numpy as np
 import prometheus_client as prc
 import rclpy
@@ -15,6 +16,7 @@ from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
 from reachy2_symbolic_ik.control_ik import ControlIK
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
+from reachy2_placo_ik.pinocchio_ik import PinocchioIK
 from reachy2_symbolic_ik.utils import (
     allow_multiturn,
     get_best_continuous_theta,
@@ -42,7 +44,8 @@ from .kdl_kinematics import (
 )
 from .pose_averager import PoseAverager
 
-SHOW_RVIZ_MARKERS = False
+SHOW_RVIZ_MARKERS = True
+PINOCCHIO = True
 
 NODE_NAME = "pollen_kdl_kinematics_node"
 rm.configure_pyroscope(
@@ -61,6 +64,12 @@ class PollenKdlKinematics(LifecycleNode):
         prc.start_http_server(10003)
 
         self.urdf = self.retrieve_urdf()
+
+        if PINOCCHIO:
+            # Create a temporary URDF file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.urdf', delete=False) as tmp_urdf:
+                tmp_urdf.write(self.urdf)
+                urdf_path = tmp_urdf.name
 
         self.tracer = rm.tracer(NODE_NAME)
 
@@ -342,6 +351,14 @@ class PollenKdlKinematics(LifecycleNode):
             is_dvt=reachy_config.dvt or reachy_config.pvt,
         )
 
+        if PINOCCHIO:
+            self.pinocchio_ik = {
+                "r_arm": PinocchioIK(urdf_path=urdf_path, arm="r_arm"),
+
+                "l_arm": PinocchioIK(urdf_path=urdf_path, arm="l_arm"),
+            }
+
+        
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
@@ -431,27 +448,45 @@ class PollenKdlKinematics(LifecycleNode):
         current_pose = np.array(current_pose)
         # self.logger.info(f"Current pose: {current_pose}")
 
-        if "arm" in name:
-            sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                name,
-                M,
-                "discrete",
-                current_joints=current_joints,
-                constrained_mode="unconstrained",
-                current_pose=current_pose,
-            )
+        if not PINOCCHIO:
+            if "arm" in name:
+                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                    name,
+                    M,
+                    "discrete",
+                    current_joints=current_joints,
+                    constrained_mode="unconstrained",
+                    current_pose=current_pose,
+                )
+            else:
+                error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+                sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+                is_reachable = True
+
+
+        if PINOCCHIO:
+            if "arm" in name:
+                sol, is_reachable, state = self.pinocchio_ik[name].inverse_kinematics(
+                    M,
+                    current_joints=np.array(current_joints),
+                )
 
             # # self.logger.info(M)
             # self.logger.info(f"solution {sol} {is_reachable}")
-        else:
-            error, sol = inverse_kinematics(
-                self.ik_solver[name],
-                q0=q0,
-                target_pose=M,
-                nb_joints=self.chain[name].getNrOfJoints(),
-            )
-            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
-            is_reachable = True
+            else:
+                error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+                sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+                is_reachable = True
 
         response.success = is_reachable
         response.joint_position.name = self.get_chain_joints_name(self.chain[name])
@@ -589,16 +624,23 @@ class PollenKdlKinematics(LifecycleNode):
                     self.chain[name].getNrOfJoints(),
                 )
 
-                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                    name,
+                if not PINOCCHIO:
+                    sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                        name,
+                        M,
+                        continuous_mode,
+                        current_joints=current_joints,
+                        constrained_mode="unconstrained",
+                        current_pose=current_pose,
+                        d_theta_max=0.02,
+                        preferred_theta=preferred_theta,
+                    )
+
+                if PINOCCHIO:
+                    sol, is_reachable, state = self.pinocchio_ik[name].inverse_kinematics(
                     M,
-                    continuous_mode,
-                    current_joints=current_joints,
-                    constrained_mode="unconstrained",
-                    current_pose=current_pose,
-                    d_theta_max=0.02,
-                    preferred_theta=preferred_theta,
-                )
+                    current_joints=np.array(current_joints),
+                    )
 
                 # self.logger.info(f" solution {sol} {is_reachable} name {name}")
                 goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
