@@ -1,22 +1,24 @@
 import copy
+import tempfile
 import time
 from functools import partial
 from threading import Event
 from typing import List
 
-import tempfile
 import numpy as np
 import prometheus_client as prc
 import rclpy
 import reachy2_monitoring as rm
 from geometry_msgs.msg import Pose, PoseStamped
+from pollen_grasping_utils.utils import get_grasp_marker
 from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from reachy2_placo_ik.pinocchio_control import PinocchioControl
+from reachy2_placo_ik.pinocchio_ik import PinocchioIK
 from reachy2_symbolic_ik.control_ik import ControlIK
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
-from reachy2_placo_ik.pinocchio_ik import PinocchioIK
 from reachy2_symbolic_ik.utils import (
     allow_multiturn,
     get_best_continuous_theta,
@@ -33,8 +35,6 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, Header, String
 from visualization_msgs.msg import MarkerArray
-
-from pollen_grasping_utils.utils import get_grasp_marker
 
 from .kdl_kinematics import (
     forward_kinematics,
@@ -67,7 +67,9 @@ class PollenKdlKinematics(LifecycleNode):
 
         if PINOCCHIO:
             # Create a temporary URDF file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.urdf', delete=False) as tmp_urdf:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".urdf", delete=False
+            ) as tmp_urdf:
                 tmp_urdf.write(self.urdf)
                 urdf_path = tmp_urdf.name
 
@@ -82,12 +84,22 @@ class PollenKdlKinematics(LifecycleNode):
             qos_profile=5,
             callback=self.on_joint_state,
         )
+
+        if PINOCCHIO:
+            self.pinocchio_ik = {
+                "r_arm": PinocchioIK(urdf_path=urdf_path, arm="r_arm"),
+                "l_arm": PinocchioIK(urdf_path=urdf_path, arm="l_arm"),
+            }
+
+            self.pinocchio_control = PinocchioControl(self, self.pinocchio_ik)
+
         self.joint_state_ready = Event()
         self.wait_for_joint_state()
 
         self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
         self.reachability_pub = {}
+        self.forward_controller_pub = {}
         self.target_sub, self.averaged_target_sub = {}, {}
         self.ik_target_sub = {}
         self.averaged_pose = {}
@@ -145,6 +157,8 @@ class PollenKdlKinematics(LifecycleNode):
                     topic=f"/{arm}_forward_position_controller/commands",
                     qos_profile=5,
                 )
+
+                self.forward_controller_pub[arm] = forward_position_pub
 
                 self.reachability_pub[arm] = self.create_publisher(
                     msg_type=ReachabilityState,
@@ -351,14 +365,6 @@ class PollenKdlKinematics(LifecycleNode):
             is_dvt=reachy_config.dvt or reachy_config.pvt,
         )
 
-        if PINOCCHIO:
-            self.pinocchio_ik = {
-                "r_arm": PinocchioIK(urdf_path=urdf_path, arm="r_arm"),
-
-                "l_arm": PinocchioIK(urdf_path=urdf_path, arm="l_arm"),
-            }
-
-        
         self.logger.info(f"Kinematics node ready!")
         self.trigger_configure()
 
@@ -366,6 +372,11 @@ class PollenKdlKinematics(LifecycleNode):
             MarkerArray, "markers_grasp_triplet", 10
         )
         self.marker_array = MarkerArray()
+
+    def publish_joint_commands(self, arm_name, q_output):
+        msg = Float64MultiArray()
+        msg.data = q_output
+        self.forward_controller_pub[arm_name].publish(msg)
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
@@ -468,7 +479,6 @@ class PollenKdlKinematics(LifecycleNode):
                 sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
                 is_reachable = True
 
-
         if PINOCCHIO:
             if "arm" in name:
                 sol, is_reachable, state = self.pinocchio_ik[name].inverse_kinematics(
@@ -543,7 +553,6 @@ class PollenKdlKinematics(LifecycleNode):
             forward_publisher.publish(msg)
 
     def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
-
         ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose"
@@ -625,7 +634,11 @@ class PollenKdlKinematics(LifecycleNode):
                 )
 
                 if not PINOCCHIO:
-                    sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                    (
+                        sol,
+                        is_reachable,
+                        state,
+                    ) = self.control_ik.symbolic_inverse_kinematics(
                         name,
                         M,
                         continuous_mode,
@@ -637,10 +650,15 @@ class PollenKdlKinematics(LifecycleNode):
                     )
 
                 if PINOCCHIO:
-                    sol, is_reachable, state = self.pinocchio_ik[name].inverse_kinematics(
-                    M,
-                    current_joints=np.array(current_joints),
-                    )
+                    sol, is_reachable, state = np.array(current_joints), True, "True"
+                    # sol, is_reachable, state = self.pinocchio_ik[
+                    #     name
+                    # ].inverse_kinematics(
+                    #     M,
+                    #     current_joints=np.array(current_joints),
+                    # )
+
+                    self.pinocchio_control.set_current_goal(name, M)
 
                 # self.logger.info(f" solution {sol} {is_reachable} name {name}")
                 goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
@@ -694,6 +712,7 @@ class PollenKdlKinematics(LifecycleNode):
                 self.logger.error("IK target pose should be only for the arms")
                 raise ValueError("IK target pose should be only for the arms")
 
+        if not PINOCCHIO:
             msg = Float64MultiArray()
             msg.data = sol
             forward_publisher.publish(msg)
@@ -710,6 +729,9 @@ class PollenKdlKinematics(LifecycleNode):
         # LEGACY (for old ros bags)
         """
         M = ros_pose_to_matrix(msg.pose)
+
+        if PINOCCHIO:
+            self.pinocchio_control.set_current_goal(name, M)
 
         if "arm" in name:
             current_joints = self.get_current_position(self.chain[name])
@@ -808,6 +830,8 @@ class PollenKdlKinematics(LifecycleNode):
     def on_joint_state(self, msg: JointState):
         for j, pos in zip(msg.name, msg.position):
             self._current_pos[j] = pos
+        if PINOCCHIO:
+            self.pinocchio_control._update_joints(self._current_pos)
 
         self.joint_state_ready.set()
 
