@@ -44,7 +44,7 @@ from .kdl_kinematics import (
 )
 from .pose_averager import PoseAverager
 
-SHOW_RVIZ_MARKERS = True
+SHOW_RVIZ_MARKERS = False
 PINOCCHIO = True
 
 NODE_NAME = "pollen_kdl_kinematics_node"
