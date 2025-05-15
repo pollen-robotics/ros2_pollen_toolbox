@@ -44,7 +44,7 @@ from .kdl_kinematics import (
 )
 from .pose_averager import PoseAverager
 
-SHOW_RVIZ_MARKERS = False
+SHOW_RVIZ_MARKERS = True
 PINOCCHIO = True
 
 NODE_NAME = "pollen_kdl_kinematics_node"
@@ -192,7 +192,7 @@ class PollenKdlKinematics(LifecycleNode):
 
                 self.ik_target_sub[arm] = self.create_subscription(
                     msg_type=IKRequest,
-                    topic=f"/{arm}/ik_target_pose"
+                    topic=f"/{arm}/ik_target_pose",
                     qos_profile=high_freq_qos_profile,
                     callback=partial(
                         self.on_ik_target_pose,
