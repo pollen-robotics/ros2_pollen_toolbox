@@ -124,7 +124,8 @@ class CentralJointCommandSender(Node):
         self.dynamic_joint_commands_pub.publish(cmd_msg)
 
     def add_joint_to_cmd(self, joint, position):
-        self.cmd_dict[joint] = position
+        with self.lock:
+            self.cmd_dict[joint] = position
 
 
 class GotoActionServer(Node):
