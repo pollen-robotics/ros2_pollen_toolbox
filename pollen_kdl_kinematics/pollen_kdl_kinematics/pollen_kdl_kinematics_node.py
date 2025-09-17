@@ -1,4 +1,5 @@
 import copy
+import tempfile
 import time
 from functools import partial
 from threading import Event
@@ -9,10 +10,15 @@ import prometheus_client as prc
 import rclpy
 import reachy2_monitoring as rm
 from geometry_msgs.msg import Pose, PoseStamped
+from pollen_grasping_utils.utils import get_grasp_marker
 from pollen_msgs.msg import CartTarget, IKRequest, ReachabilityState
 from pollen_msgs.srv import GetForwardKinematics, GetInverseKinematics
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 from rclpy.qos import HistoryPolicy, QoSDurabilityPolicy, QoSProfile, ReliabilityPolicy
+from reachy2_qpik.reachy2_acceleration_control import Reachy2AccelerationControl
+from reachy2_qpik.reachy2_speed_control import Reachy2SpeedControl
+from reachy2_qpik.reachy2_qpik import Reachy2QPIK
+from reachy2_qpik.reachy2_clik import Reachy2CLIK
 from reachy2_symbolic_ik.control_ik import ControlIK
 from reachy2_symbolic_ik.symbolic_ik import SymbolicIK
 from reachy2_symbolic_ik.utils import (
@@ -32,8 +38,6 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, Header, String
 from visualization_msgs.msg import MarkerArray
 
-from pollen_grasping_utils.utils import get_grasp_marker
-
 from .kdl_kinematics import (
     forward_kinematics,
     generate_solver,
@@ -42,7 +46,17 @@ from .kdl_kinematics import (
 )
 from .pose_averager import PoseAverager
 
-SHOW_RVIZ_MARKERS = False
+from enum import Enum
+
+class IKMode(Enum):
+    SYMBOLIC = "symbolic"
+    CLIK = "clik"
+    SPEED_QP = "speed_qp"
+    ACCELERATION_QP = "acceleration_qp"
+
+
+SHOW_RVIZ_MARKERS = True
+IK_MODE = IKMode.ACCELERATION_QP  
 
 NODE_NAME = "pollen_kdl_kinematics_node"
 rm.configure_pyroscope(
@@ -51,6 +65,7 @@ rm.configure_pyroscope(
         "server": "true",
         "client": "true",
     },
+
 )
 
 
@@ -61,6 +76,14 @@ class PollenKdlKinematics(LifecycleNode):
         prc.start_http_server(10003)
 
         self.urdf = self.retrieve_urdf()
+
+        if IK_MODE != IKMode.SYMBOLIC:
+            # Create a temporary URDF file
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".urdf", delete=False
+            ) as tmp_urdf:
+                tmp_urdf.write(self.urdf)
+                urdf_path = tmp_urdf.name
 
         self.tracer = rm.tracer(NODE_NAME)
 
@@ -73,12 +96,39 @@ class PollenKdlKinematics(LifecycleNode):
             qos_profile=5,
             callback=self.on_joint_state,
         )
+
+        if IK_MODE == IKMode.SYMBOLIC:
+            self.reachy2_ik = None
+            self.reachy2_control = None
+
+        elif IK_MODE == IKMode.CLIK:
+            self.reachy2_ik = {
+                "l_arm": Reachy2CLIK(urdf_path=urdf_path, arm="l_arm"),
+                "r_arm": Reachy2CLIK(urdf_path=urdf_path, arm="r_arm"),
+            }
+            self.reachy2_control = Reachy2SpeedControl(self, self.reachy2_ik)
+
+        elif IK_MODE == IKMode.SPEED_QP:
+            self.reachy2_ik = {
+                "l_arm": Reachy2QPIK(urdf_path=urdf_path, arm="l_arm"),
+                "r_arm": Reachy2QPIK(urdf_path=urdf_path, arm="r_arm"),
+            }
+            self.reachy2_control = Reachy2SpeedControl(self, self.reachy2_ik)
+
+        elif IK_MODE == IKMode.ACCELERATION_QP:
+            self.reachy2_ik = {
+                "l_arm": Reachy2QPIK(urdf_path=urdf_path, arm="l_arm"),
+                "r_arm": Reachy2QPIK(urdf_path=urdf_path, arm="r_arm"),
+            }
+            self.reachy2_control = Reachy2AccelerationControl(self, self.reachy2_ik)
+
         self.joint_state_ready = Event()
         self.wait_for_joint_state()
 
         self.chain, self.fk_solver, self.ik_solver = {}, {}, {}
         self.fk_srv, self.ik_srv = {}, {}
         self.reachability_pub = {}
+        self.forward_controller_pub = {}
         self.target_sub, self.averaged_target_sub = {}, {}
         self.ik_target_sub = {}
         self.averaged_pose = {}
@@ -136,6 +186,8 @@ class PollenKdlKinematics(LifecycleNode):
                     topic=f"/{arm}_forward_position_controller/commands",
                     qos_profile=5,
                 )
+
+                self.forward_controller_pub[arm] = forward_position_pub
 
                 self.reachability_pub[arm] = self.create_publisher(
                     msg_type=ReachabilityState,
@@ -333,14 +385,11 @@ class PollenKdlKinematics(LifecycleNode):
 
         reachy_config = ReachyConfig(no_print=True)
 
-        r_orbita3D_max_angle = reachy_config.config["right_wrist_poulpe3d"]['config']['orientation_limits']['orbita3D_max_angle']
-        l_orbita3D_max_angle = reachy_config.config["left_wrist_poulpe3d"]['config']['orientation_limits']['orbita3D_max_angle']
         self.control_ik = ControlIK(
             logger=self.logger,
             current_joints=current_joints,
             current_pose=current_pose,
             urdf=self.urdf,
-            orbita3D_max_angle=[r_orbita3D_max_angle, l_orbita3D_max_angle],
             reachy_model=reachy_config.model,
             is_dvt=reachy_config.dvt or reachy_config.pvt,
         )
@@ -352,6 +401,11 @@ class PollenKdlKinematics(LifecycleNode):
             MarkerArray, "markers_grasp_triplet", 10
         )
         self.marker_array = MarkerArray()
+
+    def publish_joint_commands(self, arm_name, q_output):
+        msg = Float64MultiArray()
+        msg.data = q_output
+        self.forward_controller_pub[arm_name].publish(msg)
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         # Dummy state to minimize impact on current behavior
@@ -434,27 +488,45 @@ class PollenKdlKinematics(LifecycleNode):
         current_pose = np.array(current_pose)
         # self.logger.info(f"Current pose: {current_pose}")
 
-        if "arm" in name:
-            sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                name,
-                M,
-                "discrete",
-                current_joints=current_joints,
-                constrained_mode="unconstrained",
-                current_pose=current_pose,
-            )
+        if IK_MODE == IKMode.SYMBOLIC:
+            if "arm" in name:
+                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
+                    name,
+                    M,
+                    "discrete",
+                    current_joints=current_joints,
+                    constrained_mode="unconstrained",
+                    current_pose=current_pose,
+                )
+                # self.logger.info(bool(is_reachable))
+            else:
+                error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+                sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+                is_reachable = True
+
+        if IK_MODE != IKMode.SYMBOLIC:
+            if "arm" in name:
+                sol, is_reachable, state = self.reachy2_ik[name].inverse_kinematics(
+                    M,
+                    current_joints=np.array(current_joints),
+                )
 
             # # self.logger.info(M)
             # self.logger.info(f"solution {sol} {is_reachable}")
-        else:
-            error, sol = inverse_kinematics(
-                self.ik_solver[name],
-                q0=q0,
-                target_pose=M,
-                nb_joints=self.chain[name].getNrOfJoints(),
-            )
-            sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
-            is_reachable = True
+            else:
+                error, sol = inverse_kinematics(
+                    self.ik_solver[name],
+                    q0=q0,
+                    target_pose=M,
+                    nb_joints=self.chain[name].getNrOfJoints(),
+                )
+                sol = limit_orbita3d_joints(sol, self.orbita3D_max_angle)
+                is_reachable = True
 
         response.success = is_reachable
         response.joint_position.name = self.get_chain_joints_name(self.chain[name])
@@ -511,7 +583,6 @@ class PollenKdlKinematics(LifecycleNode):
             forward_publisher.publish(msg)
 
     def on_ik_target_pose(self, msg: IKRequest, name, forward_publisher):
-
         ctx = rm.ctx_from_traceparent(msg.traceparent)
 
         trace_name = f"{name}::on_ik_target_pose"
@@ -592,16 +663,35 @@ class PollenKdlKinematics(LifecycleNode):
                     self.chain[name].getNrOfJoints(),
                 )
 
-                sol, is_reachable, state = self.control_ik.symbolic_inverse_kinematics(
-                    name,
-                    M,
-                    continuous_mode,
-                    current_joints=current_joints,
-                    constrained_mode="unconstrained",
-                    current_pose=current_pose,
-                    d_theta_max=0.02,
-                    preferred_theta=preferred_theta,
-                )
+                if IK_MODE == IKMode.SYMBOLIC:
+                    (
+                        sol,
+                        is_reachable,
+                        state,
+                    ) = self.control_ik.symbolic_inverse_kinematics(
+                        name,
+                        M,
+                        continuous_mode,
+                        current_joints=current_joints,
+                        constrained_mode="unconstrained",
+                        current_pose=current_pose,
+                        d_theta_max=0.02,
+                        preferred_theta=preferred_theta,
+                    )
+                    # self.logger.info(f"{bool(is_reachable)}")
+                    # self.logger.info(f"{state}")
+
+                if IK_MODE != IKMode.SYMBOLIC:
+                    sol, is_reachable, state = np.array(current_joints), True, "True"
+                    
+                    # sol, is_reachable, state = self.reachy2_ik[
+                    #     name
+                    # ].inverse_kinematics(
+                    #     M,
+                    #     current_joints=np.array(current_joints),
+                    # )
+
+                    self.reachy2_control.set_current_goal(name, M)
 
                 # self.logger.info(f" solution {sol} {is_reachable} name {name}")
                 goal_pose = self.control_ik.symbolic_ik_solver[name].goal_pose
@@ -655,6 +745,8 @@ class PollenKdlKinematics(LifecycleNode):
                 self.logger.error("IK target pose should be only for the arms")
                 raise ValueError("IK target pose should be only for the arms")
 
+
+        if IK_MODE == IKMode.SYMBOLIC:
             msg = Float64MultiArray()
             msg.data = sol
             forward_publisher.publish(msg)
@@ -671,6 +763,9 @@ class PollenKdlKinematics(LifecycleNode):
         # LEGACY (for old ros bags)
         """
         M = ros_pose_to_matrix(msg.pose)
+
+        if IK_MODE != IKMode.SYMBOLIC:
+            self.reachy2_control.set_current_goal(name, M)
 
         if "arm" in name:
             current_joints = self.get_current_position(self.chain[name])
@@ -769,6 +864,8 @@ class PollenKdlKinematics(LifecycleNode):
     def on_joint_state(self, msg: JointState):
         for j, pos in zip(msg.name, msg.position):
             self._current_pos[j] = pos
+        if IK_MODE != IKMode.SYMBOLIC:
+            self.reachy2_control._update_joints(self._current_pos)
 
         self.joint_state_ready.set()
 
