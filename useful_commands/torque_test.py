@@ -13,13 +13,13 @@ if __name__ == "__main__":
     if not reachy.is_connected:
         exit("Reachy is not connected.")
 
-    print("Turning on Reachy")
-    reachy.turn_on()
-    time.sleep(0.2)
-    assert reachy.is_on, "Reachy is not turned on."
-    time.sleep(0.2)
-
     try:
+        print("Turning on Reachy")
+        reachy.turn_on()
+        time.sleep(0.2)
+        assert reachy.is_on()
+        time.sleep(0.2)
+
         iter = 0
 
         while iter < 20:
