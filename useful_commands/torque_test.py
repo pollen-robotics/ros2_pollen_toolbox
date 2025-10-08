@@ -1,74 +1,101 @@
 from reachy2_sdk import ReachySDK
-import logging
 import time
+import numpy as np
+import pytest
 
-if __name__ == "__main__":
-    print("Reachy 2 test: torques")
+interrupted = False
 
-    test_result = "SUCCEEDED"
+N = 20
 
-    logging.basicConfig(level=logging.INFO)
+
+@pytest.fixture(scope="package")
+def reachy_sdk() -> ReachySDK:
     reachy = ReachySDK(host="localhost")
+    assert reachy.is_connected()
 
-    if not reachy.is_connected:
-        exit("Reachy is not connected.")
+    assert reachy.turn_on()
 
     try:
-        print("Turning on Reachy")
-        reachy.turn_on()
-        time.sleep(0.2)
-        assert reachy.is_on()
-        time.sleep(0.2)
+        yield reachy
 
-        iter = 0
-
-        while iter < 20:
-            iter += 1
-            print("Iteration: ", iter)
-            reachy.r_arm.goto_posture()
-            reachy.l_arm.goto_posture()
-            reachy.r_arm.gripper.open()
-            reachy.l_arm.gripper.open()
-            head_goto = reachy.head.look_at(0.5, 0, 10)
-            reachy.head.l_antenna.goto(-20)
-            reachy.head.r_antenna.goto(20)
-
-            while not reachy.is_goto_finished(head_goto):
-                time.sleep(0.1)
-            time.sleep(0.5)
-
-            reachy.r_arm.goto_posture("elbow_90")
-            reachy.l_arm.goto_posture("elbow_90")
-            reachy.r_arm.gripper.close()
-            reachy.l_arm.gripper.close()
-            head_goto = reachy.head.look_at(0.5, 0, -20)
-            reachy.head.l_antenna.goto(50)
-            reachy.head.r_antenna.goto(-50)
-
-            while not reachy.is_goto_finished(head_goto):
-                time.sleep(0.1)
-            time.sleep(0.5)
-
-            reachy.turn_off_smoothly()
-            time.sleep(0.5)
-            assert reachy.is_off()
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        test_result = "FAILED"
-        import traceback
-
-        traceback.print_exc()
     finally:
-        print("Set to Zero pose ...")
-        goto_ids = reachy.goto_posture("default", wait=True)
-        reachy.r_arm.gripper.open()
-        reachy.l_arm.gripper.open()
+        reachy.goto_posture("default", wait=True)
         reachy.cancel_all_goto()
 
-        print("Turning off Reachy")
         reachy.turn_off_smoothly()
 
-        time.sleep(0.2)
+    reachy.disconnect()
 
-        exit("Exiting torques test with result: " + test_result)
+
+@pytest.mark.parametrize("iter_idx", range(N))
+def test_torques(reachy_sdk: ReachySDK, iter_idx) -> None:
+    reachy_sdk.turn_on()
+    time.sleep(0.2)
+    assert reachy_sdk.is_on()
+    time.sleep(0.2)
+
+    reachy_sdk.r_arm.goto_posture()
+    reachy_sdk.l_arm.goto_posture()
+    reachy_sdk.r_arm.gripper.open()
+    reachy_sdk.l_arm.gripper.open()
+    head_goto = reachy_sdk.head.goto([0, 0, -15])
+    reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(20, duration=0.5)
+    reachy_sdk.head.l_antenna.goto(20, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(-20, duration=0.5)
+    reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(20, duration=0.5)
+
+    while not reachy_sdk.is_goto_finished(head_goto):
+        time.sleep(0.1)
+    assert np.isclose(reachy_sdk.head.l_antenna.present_position, -20, atol=1)
+    assert np.isclose(reachy_sdk.head.r_antenna.present_position, 20, atol=1)
+    assert np.allclose(
+        reachy_sdk.r_arm.get_current_positions(),
+        reachy_sdk.r_arm.get_default_posture_joints(),
+        atol=0.5,
+    )
+    assert np.allclose(
+        reachy_sdk.l_arm.get_current_positions(),
+        reachy_sdk.l_arm.get_default_posture_joints(),
+        atol=0.5,
+    )
+    assert np.allclose(reachy_sdk.head.get_current_positions(), [0, 0, -15], atol=0.1)
+    assert np.isclose(reachy_sdk.r_arm.gripper.opening, 100, atol=0.2)
+    assert np.isclose(reachy_sdk.r_arm.gripper.opening, 100, atol=0.2)
+    time.sleep(0.5)
+
+    reachy_sdk.r_arm.goto_posture("elbow_90")
+    reachy_sdk.l_arm.goto_posture("elbow_90")
+    reachy_sdk.r_arm.gripper.close()
+    reachy_sdk.l_arm.gripper.close()
+    head_goto = reachy_sdk.head.goto([0, 30, 0])
+    reachy_sdk.head.l_antenna.goto(50, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(-50, duration=0.5)
+    reachy_sdk.head.l_antenna.goto(0, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(0, duration=0.5)
+    reachy_sdk.head.l_antenna.goto(50, duration=0.5)
+    reachy_sdk.head.r_antenna.goto(-50, duration=0.5)
+
+    while not reachy_sdk.is_goto_finished(head_goto):
+        time.sleep(0.1)
+    assert np.isclose(reachy_sdk.head.l_antenna.present_position, 50, atol=1)
+    assert np.isclose(reachy_sdk.head.r_antenna.present_position, -50, atol=1)
+    assert np.allclose(
+        reachy_sdk.r_arm.get_current_positions(),
+        reachy_sdk.r_arm.get_default_posture_joints("elbow_90"),
+        atol=0.5,
+    )
+    assert np.allclose(
+        reachy_sdk.l_arm.get_current_positions(),
+        reachy_sdk.l_arm.get_default_posture_joints("elbow_90"),
+        atol=0.5,
+    )
+    assert np.isclose(reachy_sdk.r_arm.gripper.opening, 0, atol=0.2)
+    assert np.isclose(reachy_sdk.r_arm.gripper.opening, 0, atol=0.2)
+    assert np.allclose(reachy_sdk.head.get_current_positions(), [0, 30, 0], atol=0.1)
+    time.sleep(0.5)
+
+    reachy_sdk.turn_off_smoothly()
+    time.sleep(0.5)
+    assert reachy_sdk.is_off()
