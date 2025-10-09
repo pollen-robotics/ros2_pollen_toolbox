@@ -3,8 +3,6 @@ import time
 import numpy as np
 import pytest
 
-interrupted = False
-
 N = 20
 
 
@@ -12,8 +10,6 @@ N = 20
 def reachy_sdk() -> ReachySDK:
     reachy = ReachySDK(host="localhost")
     assert reachy.is_connected()
-
-    assert reachy.turn_on()
 
     try:
         yield reachy
@@ -32,7 +28,6 @@ def test_torques(reachy_sdk: ReachySDK, iter_idx) -> None:
     reachy_sdk.turn_on()
     time.sleep(0.2)
     assert reachy_sdk.is_on()
-    time.sleep(0.2)
 
     reachy_sdk.r_arm.goto_posture()
     reachy_sdk.l_arm.goto_posture()
@@ -97,5 +92,5 @@ def test_torques(reachy_sdk: ReachySDK, iter_idx) -> None:
     time.sleep(0.5)
 
     reachy_sdk.turn_off_smoothly()
-    time.sleep(0.5)
+    time.sleep(0.2)
     assert reachy_sdk.is_off()
