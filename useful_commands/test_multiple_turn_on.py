@@ -24,7 +24,7 @@ def reachy_sdk() -> ReachySDK:
 
 
 @pytest.mark.parametrize("iter_idx", range(N))
-def test_torques(reachy_sdk: ReachySDK, iter_idx) -> None:
+def test_torque_and_pos(reachy_sdk: ReachySDK, iter_idx) -> None:
     reachy_sdk.turn_on()
     time.sleep(0.2)
     assert reachy_sdk.is_on()
