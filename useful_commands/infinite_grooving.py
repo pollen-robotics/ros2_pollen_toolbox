@@ -1,18 +1,108 @@
 """Example of how to draw a square with Reachy's right arm."""
 
+import json
 import logging
+import signal
+import sys
+import threading
 import time
+import traceback
 
 import numpy as np
 import numpy.typing as npt
-
+import rclpy
+from control_msgs.msg import DynamicJointState
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
 from reachy2_sdk import ReachySDK
-
 from reachy2_sdk.parts.joints_based_part import JointsBasedPart
 
 # These are integer values between 0 and 100
-TORQUE_LIMIT=80
-SPEED_LIMIT=25
+TORQUE_LIMIT = 80
+SPEED_LIMIT = 25
+
+STOP = threading.Event()
+
+
+class ReachySubscriber(Node):
+    def __init__(self):
+        super().__init__("reachy_subscriber")
+        self.subscriber = self.create_subscription(
+            DynamicJointState, "/dynamic_joint_states", self.update_state, 10
+        )
+        self.motor_temperatures = {}
+        self.motor_currents = {}
+        self.t0 = time.time()
+        self.last_recordtime = self.t0
+        self.initialized = False
+        print("ReachySubscriber initialized")
+
+    def update_state(self, msg):
+        if time.time() - self.last_recordtime > 1:
+            timestamp = f"{time.time() - self.t0:.3f}"
+            for idx, name in enumerate(msg.joint_names):
+                if "raw_motor" not in name:
+                    continue
+
+                if name not in self.motor_temperatures:
+                    self.motor_temperatures[name] = {}
+                if name not in self.motor_currents:
+                    self.motor_currents[name] = {}
+
+                kv = msg.interface_values[idx]
+                data = {
+                    iface: kv.values[i] for i, iface in enumerate(kv.interface_names)
+                }
+
+                if "motor_temperature" in data:
+                    temp = data["motor_temperature"]
+                elif "temperature" in data:
+                    temp = data["temperature"]
+
+                if "motor_currents" in data:
+                    curr = data["motor_currents"]
+                elif "currents" in data:
+                    curr = data["currents"]
+
+                self.motor_temperatures[name][timestamp] = float(temp)
+                self.motor_currents[name][timestamp] = float(curr)
+                self.last_recordtime = time.time()
+
+    def print_motor_data(self):
+        data = {
+            "motor_temperatures": self.motor_temperatures,
+            "motor_currents": self.motor_currents,
+        }
+        print(json.dumps(data))
+
+
+def start_ros_background_spin(node):
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
+    t = threading.Thread(target=executor.spin, daemon=True)
+    t.start()
+    return executor, t
+
+
+def stop_ros_background_spin(executor, node, thread):
+    try:
+        node.print_motor_data()
+        executor.shutdown()
+    except Exception:
+        pass
+    try:
+        node.destroy_node()
+    except Exception:
+        pass
+    try:
+        rclpy.shutdown()
+    except Exception:
+        pass
+
+
+def signal_handler(sig, frame):
+    STOP.set()
 
 
 def build_pose_matrix(x: float, y: float, z: float) -> npt.NDArray[np.float64]:
@@ -82,7 +172,16 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(-20)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    reachy.mobile_base.goto(x=0.0, y=0.0, theta=30.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
+    reachy.mobile_base.goto(
+        x=0.0,
+        y=0.0,
+        theta=30.0,
+        wait=False,
+        degrees=True,
+        distance_tolerance=0.05,
+        angle_tolerance=5.0,
+        timeout=10000,
+    )
 
     # Going from B to C
     r_target_pose = build_pose_matrix(0.4, -0.3, 0)
@@ -96,7 +195,16 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(-50)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    reachy.mobile_base.goto(x=0.0, y=0.0, theta=0.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
+    reachy.mobile_base.goto(
+        x=0.0,
+        y=0.0,
+        theta=0.0,
+        wait=False,
+        degrees=True,
+        distance_tolerance=0.05,
+        angle_tolerance=5.0,
+        timeout=10000,
+    )
 
     # Going from C to D
     r_target_pose = build_pose_matrix(0.4, -0.3, -0.2)
@@ -110,8 +218,16 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(20)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    reachy.mobile_base.goto(x=0.0, y=0.0, theta=-30.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
-
+    reachy.mobile_base.goto(
+        x=0.0,
+        y=0.0,
+        theta=-30.0,
+        wait=False,
+        degrees=True,
+        distance_tolerance=0.05,
+        angle_tolerance=5.0,
+        timeout=10000,
+    )
 
     # Going from D to A
     r_target_pose = build_pose_matrix(0.4, -0.5, -0.2)
@@ -125,8 +241,16 @@ def draw_square(reachy: ReachySDK) -> None:
     reachy.head.r_antenna.goto(0)
     reachy.r_arm.goto(r_ik, duration=2.0, degrees=True)
     reachy.l_arm.goto(l_ik, duration=2.0, degrees=True, wait=True)
-    reachy.mobile_base.goto(x=0.0, y=0.0, theta=0.0, wait=False, degrees=True, distance_tolerance=0.05, angle_tolerance=5.0, timeout=10000)
-
+    reachy.mobile_base.goto(
+        x=0.0,
+        y=0.0,
+        theta=0.0,
+        wait=False,
+        degrees=True,
+        distance_tolerance=0.05,
+        angle_tolerance=5.0,
+        timeout=10000,
+    )
 
 
 def goto_to_point_A(reachy: ReachySDK) -> None:
@@ -150,6 +274,9 @@ def goto_to_point_A(reachy: ReachySDK) -> None:
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGINT, signal_handler)
+
+    starting_time = time.time()
     print("Reachy SDK example: draw square")
 
     logging.basicConfig(level=logging.INFO)
@@ -158,14 +285,20 @@ if __name__ == "__main__":
     if not reachy.is_connected:
         exit("Reachy is not connected.")
 
+    rclpy.init()
+    reachy_subscriber = ReachySubscriber()
+    executor, spin_thread = start_ros_background_spin(reachy_subscriber)
+
     print("Turning on Reachy")
     reachy.turn_on()
     reachy.mobile_base.reset_odometry()
 
-    set_speed_and_torque_limits(reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT)
+    set_speed_and_torque_limits(
+        reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT
+    )
 
     time.sleep(0.2)
-    try :
+    try:
         print("Move to point A, preparing infinite square drawing ...")
         reachy.r_arm.gripper.close()
         reachy.l_arm.gripper.close()
@@ -178,24 +311,18 @@ if __name__ == "__main__":
         reachy.r_arm.gripper.close()
         reachy.l_arm.gripper.close()
 
-        while True:
+        while (
+            time.time() - starting_time < 7200 and not STOP.is_set()
+        ):  # run for 2 hours
             print("Draw a square with the right arm ...")
             draw_square(reachy)
+    except KeyboardInterrupt:
+        print("Keyboard interrupt received, stopping...", file=sys.stderr)
     except Exception as e:
-        print(f"An error occurred: {e}")
-        # print traceback
-        import traceback
-        traceback.print_exc()
+        print(f"An error occurred: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
     finally:
-        print("Set to Zero pose ...")
-        goto_ids = reachy.goto_posture("default", wait=True)
-        # wait_for_pose_to_finish(goto_ids)
-        reachy.r_arm.gripper.open()
-        reachy.l_arm.gripper.open()
-
-        print("Turning off Reachy")
-        reachy.turn_off()
-
+        reachy.cancel_all_goto()
+        reachy.turn_off_smoothly()
         time.sleep(0.2)
-
-        exit("Exiting example")
+        stop_ros_background_spin(executor, reachy_subscriber, spin_thread)
