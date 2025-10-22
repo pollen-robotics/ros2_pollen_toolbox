@@ -55,6 +55,7 @@ class GravityCompensator(Node):
         self.pubr = self.create_publisher(Float64MultiArray, '/r_arm_forward_effort_controller/commands', 10)
         self.pub_on = self.create_publisher(Float64MultiArray, '/forward_torque_controller/commands', 10)
         self.pub_limit = self.create_publisher(Float64MultiArray, '/forward_torque_limit_controller/commands', 10)
+        self.pub_object_mass = self.create_publisher(Float64MultiArray, '/current_payload_mass', 10)
         
         
         # Get URDF from parameter server
@@ -179,12 +180,15 @@ class GravityCompensator(Node):
         
         try:
             q = np.zeros(self.robot.nq)
+            tau_k = np.zeros(self.robot.nv)
             names = [""]* self.robot.nq
             for i, name in enumerate(msg.name):
                 if name in self.robot.model.names:
                     idx = self.robot.model.getJointId(name)
                     q[idx - 1] = msg.position[i]  # -1 since 0 is universe
                     names[idx - 1] = name
+                    tau_k[idx - 1] = msg.effort[i]
+                    
             
             self.q = q
             # Compute gravity torques
@@ -194,33 +198,41 @@ class GravityCompensator(Node):
             tau_l = np.array(tau[:7].copy())
             tau_r = np.array(tau[7:].copy())
             
+            joint_id = self.robot.model.getFrameId("l_arm_tip")
+            J = pin.computeFrameJacobian(self.robot.model,
+                                            self.robot.data,
+                                            self.q,
+                                            joint_id,
+                                            reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
+            
+            l_m = self.l_arm_object_mass
             if self.l_arm_object_mass != 0 :
-                joint_id = self.robot.model.getFrameId("l_arm_tip")
-                J = pin.computeFrameJacobian(self.robot.model,
-                                                self.robot.data,
-                                                self.q,
-                                                joint_id,
-                                                reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
-
                 tau_l = tau_l + J[:,:7].T @ np.array([0,0, self.l_arm_object_mass*9.81])
+            else:
+                l_m = (np.linalg.pinv(J[:,:7].T)@(tau_k[:7] - tau_l))[2]/9.81
 
+            joint_id = self.robot.model.getFrameId("r_arm_tip")
+            J = pin.computeFrameJacobian(self.robot.model,
+                                            self.robot.data,
+                                            self.q,
+                                            joint_id,
+                                            reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
+
+            r_m = self.r_arm_object_mass
             if self.r_arm_object_mass != 0:
-                joint_id = self.robot.model.getFrameId("r_arm_tip")
-                J = pin.computeFrameJacobian(self.robot.model,
-                                                self.robot.data,
-                                                self.q,
-                                                joint_id,
-                                                reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
-
                 tau_r = tau_r + J[:,7:].T @ np.array([0,0, self.r_arm_object_mass*9.81])
-            
-            
+            else: 
+                r_m = (np.linalg.pinv(J[:,7:].T)@(tau_k[7:] - tau_r))[2]/9.81
+
             effort_msg = Float64MultiArray()
             effort_msg.data = tau_l.tolist()
             self.publ.publish(effort_msg)
             effort_msg.data = tau_r.tolist()
             self.pubr.publish(effort_msg)
-
+            
+            object_mass_msg = Float64MultiArray()
+            object_mass_msg.data = [l_m, r_m]
+            self.pub_object_mass.publish(object_mass_msg)
 
         except Exception as e:
             self.get_logger().error(f"Error in joint_state_cb: {e}")
