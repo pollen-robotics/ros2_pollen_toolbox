@@ -49,12 +49,11 @@ class GravityCompensator(Node):
 
         # Subs and pubs
         self.sub = self.create_subscription(JointState, '/joint_states', self.joint_state_cb, 10)
+        self.sub_torque_on = self.create_subscription(Float64MultiArray, '/forward_torque_controller/commands', self.torque_on_cb, 10)
         self.sub_object_mass = self.create_subscription(Float64MultiArray, '/set_payload_mass', self.object_mass_cb, 10)
         
         self.publ = self.create_publisher(Float64MultiArray, '/l_arm_forward_effort_controller/commands', 10)
         self.pubr = self.create_publisher(Float64MultiArray, '/r_arm_forward_effort_controller/commands', 10)
-        self.pub_on = self.create_publisher(Float64MultiArray, '/forward_torque_controller/commands', 10)
-        self.pub_limit = self.create_publisher(Float64MultiArray, '/forward_torque_limit_controller/commands', 10)
         self.pub_object_mass = self.create_publisher(Float64MultiArray, '/current_payload_mass', 10)
         
         
@@ -67,16 +66,25 @@ class GravityCompensator(Node):
         req.names = ['robot_description']
         future = self.cli.call_async(req)
         future.add_done_callback(self._on_robot_description)
-
-        # Initial torque limits
-        torque_limit = Float64MultiArray()
-        torque_limit.data = [0.01]*21
-        self.pub_limit.publish(torque_limit)
         
-        # enable torque controllers
-        torque_on = Float64MultiArray()
-        torque_on.data = [1.0]*11  
-        self.pub_on.publish(torque_on)
+        self.create_timer(0.005, self.update)  # 200Hz update rate
+        
+        self.r_arm_on = False
+        self.l_arm_on = False
+
+
+    def torque_on_cb(self, msg: Float64MultiArray):
+        # if torque is off, reset object masses to zero
+        try:
+            self.l_arm_on = True
+            self.r_arm_on = True
+            for i, val in enumerate(msg.data):
+                if i > 1 and i < 4:
+                    self.l_arm_on = self.l_arm_on and bool(val)
+                elif i > 5 and i < 8:
+                    self.r_arm_on = self.r_arm_on and bool(val)
+        except Exception as e:
+            self.get_logger().error(f"Error in torque_on_cb: {e}")
                     
 
 
@@ -189,28 +197,44 @@ class GravityCompensator(Node):
                     names[idx - 1] = name
                     tau_k[idx - 1] = msg.effort[i]
                     
-            
             self.q = q
-            # Compute gravity torques
-            tau = pin.computeGeneralizedGravity(self.robot.model, self.robot.data, self.q)
+            self.tau_k = tau_k
 
-            # extract left and right arm torques
+        except Exception as e:
+            self.get_logger().error(f"Error in joint_state_cb: {e}")
+
+    # function that will run continously
+    def update(self):
+    
+        # Compute gravity torques
+        tau = pin.computeGeneralizedGravity(self.robot.model, self.robot.data, self.q)
+        
+        tau_l = np.zeros(7)
+        l_m = 0
+        tau_r = np.zeros(7)
+        r_m = 0
+        
+        # extract left and right arm torques
+        if self.l_arm_on:
             tau_l = np.array(tau[:7].copy())
-            tau_r = np.array(tau[7:].copy())
-            
+            # get the jacobian at the left arm tip
             joint_id = self.robot.model.getFrameId("l_arm_tip")
             J = pin.computeFrameJacobian(self.robot.model,
-                                            self.robot.data,
-                                            self.q,
-                                            joint_id,
-                                            reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
-            
-            l_m = self.l_arm_object_mass
+                                                self.robot.data,
+                                                self.q,
+                                                joint_id,
+                                                reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
+                
+            # left payload mass estimation
+            l_m = (np.linalg.pinv(J[:,:7].T)@(self.tau_k[:7] - tau_l))[2]/9.81
+            # add payload gravity compensation - if payload mass is not zero
             if self.l_arm_object_mass != 0 :
                 tau_l = tau_l + J[:,:7].T @ np.array([0,0, self.l_arm_object_mass*9.81])
-            else:
-                l_m = (np.linalg.pinv(J[:,:7].T)@(tau_k[:7] - tau_l))[2]/9.81
-
+                
+        if self.r_arm_on:
+            tau_r = np.array(tau[7:14].copy())
+            
+            # get the jacobian at the right arm tip
             joint_id = self.robot.model.getFrameId("r_arm_tip")
             J = pin.computeFrameJacobian(self.robot.model,
                                             self.robot.data,
@@ -218,25 +242,25 @@ class GravityCompensator(Node):
                                             joint_id,
                                             reference_frame=pin.LOCAL_WORLD_ALIGNED)[:3,:]
 
-            r_m = self.r_arm_object_mass
+            # right payload mass estimation
+            r_m = (np.linalg.pinv(J[:,7:].T)@(self.tau_k[7:] - tau_r))[2]/9.81
+            # add payload gravity compensation - if payload mass is not zero
             if self.r_arm_object_mass != 0:
                 tau_r = tau_r + J[:,7:].T @ np.array([0,0, self.r_arm_object_mass*9.81])
-            else: 
-                r_m = (np.linalg.pinv(J[:,7:].T)@(tau_k[7:] - tau_r))[2]/9.81
-
-            effort_msg = Float64MultiArray()
-            effort_msg.data = tau_l.tolist()
-            self.publ.publish(effort_msg)
-            effort_msg.data = tau_r.tolist()
-            self.pubr.publish(effort_msg)
+        
             
-            object_mass_msg = Float64MultiArray()
-            object_mass_msg.data = [l_m, r_m]
-            self.pub_object_mass.publish(object_mass_msg)
-
-        except Exception as e:
-            self.get_logger().error(f"Error in joint_state_cb: {e}")
-
+        effort_msg = Float64MultiArray()
+        effort_msg.data = tau_l.tolist()
+        self.publ.publish(effort_msg)
+        effort_msg.data = tau_r.tolist()
+        self.pubr.publish(effort_msg)
+        
+        object_mass_msg = Float64MultiArray()
+        object_mass_msg.data = [l_m, r_m]
+        self.pub_object_mass.publish(object_mass_msg)
+        
+        
+    
 def main(args=None):
     rclpy.init(args=args)
     node = GravityCompensator()
