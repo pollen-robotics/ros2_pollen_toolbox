@@ -5,14 +5,13 @@ By deafult, it is launched in the background by the ros launch and is always on.
 
 To make the robot go to the gravity compensation mode, you will have to:
 - enable the actuators: torque_on 
-- set the torque limits to a very small number (e.g. 0.001  - 0.1%)
+- set the torque limits to zero or a very small number (e.g.<0.1% - 0.001)
 
 For example, you can use the following commands:
 ```bash
 ros2 topic pub --once /forward_torque_controller/commands std_msgs/Float64MultiArray "{ data:[1,1,1,1,1,1,1,1,1,1,1]}"
-ros2 topic pub --once /forward_torque_limit_controller/commands std_msgs/Float64MultiArray "{data:[0.001, 0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]}"
+ros2 topic pub --once /forward_torque_limit_controller/commands std_msgs/Float64MultiArray "{data:[0.0, 0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}"
 ```
-
 
 Or you cane use the script provided in the `scripts` folder:
 
