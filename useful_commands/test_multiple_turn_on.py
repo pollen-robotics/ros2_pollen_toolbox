@@ -3,17 +3,18 @@ import time
 import numpy as np
 import pytest
 
-N = 20
+N = 20  # Number of iterations of the scenario
 
 TOL_ANTENNA = 3  # degrees
 TOL_GRIPPER = 1  # percentage
 TOL_NECK = 0.1  # degrees
 TOL_ARM = 0.5  # degrees
+TOL_DURATION = 0.1  # seconds
 
 
 @pytest.fixture(scope="package")
 def reachy_sdk() -> ReachySDK:
-    reachy = ReachySDK(host="localhost")
+    reachy = ReachySDK(host="192.168.10.138")
     assert reachy.is_connected()
 
     try:
@@ -27,7 +28,7 @@ def reachy_sdk() -> ReachySDK:
 
 
 def _run_scenario_once(reachy_sdk: ReachySDK):
-    """Exécute le scénario complet et renvoie toutes les mesures utiles."""
+    """Run the scenario once and return the results."""
     results = {}
 
     # ========= Turn on =========
@@ -36,24 +37,41 @@ def _run_scenario_once(reachy_sdk: ReachySDK):
     results["is_on_start"] = reachy_sdk.is_on()
 
     # ========= Phase 1 =========
-    reachy_sdk.r_arm.goto_posture()
-    reachy_sdk.l_arm.goto_posture()
-    reachy_sdk.r_arm.gripper.open()
-    reachy_sdk.l_arm.gripper.open()
-
-    head_goto = reachy_sdk.head.goto([0, 0, -15])
+    r_arm_goto_p1 = reachy_sdk.r_arm.goto_posture()
+    l_arm_goto_p1 = reachy_sdk.l_arm.goto_posture()
+    r_gripper_goto_p1 = reachy_sdk.r_arm.gripper.goto(100, percentage=True)
+    l_gripper_goto_p1 = reachy_sdk.l_arm.gripper.goto(100, percentage=True)
 
     reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
     reachy_sdk.head.r_antenna.goto(20, duration=0.5)
     reachy_sdk.head.l_antenna.goto(20, duration=0.5)
     reachy_sdk.head.r_antenna.goto(-20, duration=0.5)
-    reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
-    reachy_sdk.head.r_antenna.goto(20, duration=0.5)
+    l_antenna_goto_p1 = reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
+    r_antenna_goto_p1 = reachy_sdk.head.r_antenna.goto(20, duration=0.5)
 
-    while not reachy_sdk.is_goto_finished(head_goto):
-        time.sleep(0.1)
+    tic = time.time()
+    reachy_sdk.head.goto([0, 0, -15], duration=2.0, wait=True)
+    results["head_goto_duration_p1"] = time.time() - tic
 
-    # Phase 1 results
+    # Phase 1 goto results
+    results["r_arm_goto_finished_p1"] = reachy_sdk.is_goto_finished(r_arm_goto_p1)
+    results["l_arm_goto_finished_p1"] = reachy_sdk.is_goto_finished(l_arm_goto_p1)
+    results["r_gripper_goto_finished_p1"] = reachy_sdk.is_goto_finished(
+        r_gripper_goto_p1
+    )
+    results["l_gripper_goto_finished_p1"] = reachy_sdk.is_goto_finished(
+        l_gripper_goto_p1
+    )
+    results["l_antenna_goto_finished_p1"] = reachy_sdk.is_goto_finished(
+        l_antenna_goto_p1
+    )
+    results["r_antenna_goto_finished_p1"] = reachy_sdk.is_goto_finished(
+        r_antenna_goto_p1
+    )
+
+    time.sleep(0.2)
+
+    # Phase 1 position results
     results["ant_l_p1"] = reachy_sdk.head.l_antenna.present_position
     results["ant_r_p1"] = reachy_sdk.head.r_antenna.present_position
     results["r_arm_pos_p1"] = reachy_sdk.r_arm.get_current_positions()
@@ -67,24 +85,41 @@ def _run_scenario_once(reachy_sdk: ReachySDK):
     time.sleep(0.5)
 
     # ========= Phase 2 =========
-    reachy_sdk.r_arm.goto_posture("elbow_90")
-    reachy_sdk.l_arm.goto_posture("elbow_90")
-    reachy_sdk.r_arm.gripper.close()
-    reachy_sdk.l_arm.gripper.close()
-
-    head_goto = reachy_sdk.head.goto([0, 30, 0])
+    head_goto_p2 = reachy_sdk.head.goto([0, 30, 0])
+    l_arm_goto_p2 = reachy_sdk.l_arm.goto_posture("elbow_90")
+    r_gripper_goto_p2 = reachy_sdk.r_arm.gripper.goto(0, percentage=True)
+    l_gripper_goto_p2 = reachy_sdk.l_arm.gripper.goto(0, percentage=True)
 
     reachy_sdk.head.l_antenna.goto(50, duration=0.5)
     reachy_sdk.head.r_antenna.goto(-50, duration=0.5)
     reachy_sdk.head.l_antenna.goto(0, duration=0.5)
     reachy_sdk.head.r_antenna.goto(0, duration=0.5)
-    reachy_sdk.head.l_antenna.goto(50, duration=0.5)
-    reachy_sdk.head.r_antenna.goto(-50, duration=0.5)
+    l_antenna_goto_p2 = reachy_sdk.head.l_antenna.goto(50, duration=0.5)
+    r_antenna_goto_p2 = reachy_sdk.head.r_antenna.goto(-50, duration=0.5)
 
-    while not reachy_sdk.is_goto_finished(head_goto):
-        time.sleep(0.1)
+    tic = time.time()
+    reachy_sdk.r_arm.goto_posture("elbow_90", duration=2.0, wait=True)
+    results["r_arm_goto_duration_p2"] = time.time() - tic
 
-    # Phase 2 results
+    # Phase 2 goto results
+    results["head_goto_finished_p2"] = reachy_sdk.is_goto_finished(head_goto_p2)
+    results["l_arm_goto_finished_p2"] = reachy_sdk.is_goto_finished(l_arm_goto_p2)
+    results["r_gripper_goto_finished_p2"] = reachy_sdk.is_goto_finished(
+        r_gripper_goto_p2
+    )
+    results["l_gripper_goto_finished_p2"] = reachy_sdk.is_goto_finished(
+        l_gripper_goto_p2
+    )
+    results["l_antenna_goto_finished_p2"] = reachy_sdk.is_goto_finished(
+        l_antenna_goto_p2
+    )
+    results["r_antenna_goto_finished_p2"] = reachy_sdk.is_goto_finished(
+        r_antenna_goto_p2
+    )
+
+    time.sleep(0.2)
+
+    # Phase 2 position results
     results["ant_l_p2"] = reachy_sdk.head.l_antenna.present_position
     results["ant_r_p2"] = reachy_sdk.head.r_antenna.present_position
     results["r_arm_pos_p2"] = reachy_sdk.r_arm.get_current_positions()
@@ -112,18 +147,60 @@ def _run_scenario_once(reachy_sdk: ReachySDK):
 @pytest.fixture(scope="module", params=range(N))
 def scenario(request, reachy_sdk: ReachySDK):
     """
-    Exécute le scénario **une seule fois** par itération pour tout le module,
-    et partage les mesures entre les tests. Ainsi, chaque test fait une seule assertion,
-    et un échec n’interrompt pas les autres.
+    Run the scenario **once** per iteration for the whole module,
+        and share the measurements between tests. Thus, each test makes a single assertion,
+        and a failure does not interrupt the others.
     """
     return _run_scenario_once(reachy_sdk)
 
 
-# ---------- Tests all parts ----------
+# ---------- All tests are conducted N times ----------
+
+# Torques on/off tests
 
 
 def test_turn_on(scenario):
     assert scenario["is_on_start"]
+
+
+def test_turn_off(scenario):
+    assert scenario["is_off_end"]
+
+
+# ========= Phase 1 =========
+
+# Goto duration phase 1
+
+
+def test_arm_right_goto_finished_phase1(scenario):
+    assert scenario["r_arm_goto_finished_p1"]
+
+
+def test_arm_left_goto_finished_phase1(scenario):
+    assert scenario["l_arm_goto_finished_p1"]
+
+
+def test_gripper_right_goto_finished_phase1(scenario):
+    assert scenario["r_gripper_goto_finished_p1"]
+
+
+def test_gripper_left_goto_finished_phase1(scenario):
+    assert scenario["l_gripper_goto_finished_p1"]
+
+
+def test_antenna_left_goto_finished_phase1(scenario):
+    assert scenario["l_antenna_goto_finished_p1"]
+
+
+def test_antenna_right_goto_finished_phase1(scenario):
+    assert scenario["r_antenna_goto_finished_p1"]
+
+
+def test_head_goto_duration_phase1(scenario):
+    assert np.isclose(scenario["head_goto_duration_p1"], 2.0, atol=TOL_DURATION)
+
+
+# Goto positions phase 1
 
 
 def test_antennas_phase1_left(scenario):
@@ -158,6 +235,42 @@ def test_gripper_phase1_left_open(scenario):
     assert np.isclose(scenario["grip_l_p1"], 100, atol=TOL_GRIPPER)
 
 
+# ========= Phase 2 =========
+
+# Goto duration phase 2
+
+
+def test_head_goto_finished_phase2(scenario):
+    assert scenario["head_goto_finished_p2"]
+
+
+def test_arm_left_goto_finished_phase2(scenario):
+    assert scenario["l_arm_goto_finished_p2"]
+
+
+def test_gripper_right_goto_finished_phase2(scenario):
+    assert scenario["r_gripper_goto_finished_p2"]
+
+
+def test_gripper_left_goto_finished_phase2(scenario):
+    assert scenario["l_gripper_goto_finished_p2"]
+
+
+def test_antenna_left_goto_finished_phase2(scenario):
+    assert scenario["l_antenna_goto_finished_p2"]
+
+
+def test_antenna_right_goto_finished_phase2(scenario):
+    assert scenario["r_antenna_goto_finished_p2"]
+
+
+def test_r_arm_goto_duration_phase2(scenario):
+    assert np.isclose(scenario["r_arm_goto_duration_p2"], 2.0, atol=TOL_DURATION)
+
+
+# Goto position phase 2
+
+
 def test_antennas_phase2_left(scenario):
     assert np.isclose(scenario["ant_l_p2"], 50, atol=TOL_ANTENNA)
 
@@ -188,7 +301,3 @@ def test_gripper_phase2_left_closed(scenario):
 
 def test_head_phase2(scenario):
     assert np.allclose(scenario["head_pos_p2"], [0, 30, 0], atol=TOL_NECK)
-
-
-def test_turn_off(scenario):
-    assert scenario["is_off_end"]
