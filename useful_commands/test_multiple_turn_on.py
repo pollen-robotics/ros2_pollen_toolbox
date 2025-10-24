@@ -14,7 +14,7 @@ TOL_DURATION = 0.1  # seconds
 
 @pytest.fixture(scope="package")
 def reachy_sdk() -> ReachySDK:
-    reachy = ReachySDK(host="192.168.10.138")
+    reachy = ReachySDK(host="localhost")
     assert reachy.is_connected()
 
     try:
