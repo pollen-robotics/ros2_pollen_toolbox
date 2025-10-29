@@ -8,6 +8,7 @@
 * [dynamic_state_router](./dynamic_state_router/) - ROS2 node to simplify the use of forward controllers
 * [pollen_kdl_kinematics](./pollen_kdl_kinematics/) - ROS2 bindings of KDL kinematics
 * [pollen_goto](./pollen_goto/) - ROS2 Action server and client to perform gotos (joint interpolations)
+* [reachy2_gravity_compensation](./reachy2_gravity_compensation/) - Gravity compensation controller for Reachy2 robot
 
 See the readme of each package for more information.
 

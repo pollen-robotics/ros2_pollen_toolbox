@@ -11,7 +11,9 @@ from reachy2_sdk import ReachySDK
 from reachy2_sdk.parts.joints_based_part import JointsBasedPart
 
 # These are integer values between 0 and 100
-TORQUE_LIMIT=80
+TORQUE_LIMIT_SHOULDER=20.0
+TORQUE_LIMIT_ELBOW=10.0
+TORQUE_LIMIT_WRIST=20.0
 SPEED_LIMIT=25
 
 
@@ -36,16 +38,24 @@ def build_pose_matrix(x: float, y: float, z: float) -> npt.NDArray[np.float64]:
         ]
     )
 
-def set_speed_and_torque_limits(reachy, torque_limit=100, speed_limit=25) -> None:
+def set_speed_and_torque_limits(reachy, torque_limit_shoulder=100, torque_limit_elbow=100, torque_limit_wrist=100,  speed_limit=25) -> None:
     """Set back speed and torque limits of all parts to given value."""
     if not reachy.info:
         reachy._logger.warning("Reachy is not connected!")
         return
+    reachy.r_arm.shoulder.set_torque_limits(torque_limit_shoulder)
+    reachy.r_arm.elbow.set_torque_limits(torque_limit_elbow)
+    reachy.r_arm.wrist.set_torque_limits(torque_limit_wrist)
 
+    reachy.l_arm.shoulder.set_torque_limits(torque_limit_shoulder)
+    reachy.l_arm.elbow.set_torque_limits(torque_limit_elbow)
+    reachy.l_arm.wrist.set_torque_limits(torque_limit_wrist)
+    
     for part in reachy.info._enabled_parts.values():
         if issubclass(type(part), JointsBasedPart):
             part.set_speed_limits(speed_limit)
-            part.set_torque_limits(torque_limit)
+            #part.set_torque_limits(torque_limit)
+        
     time.sleep(0.5)
 
 def draw_square(reachy: ReachySDK) -> None:
@@ -148,7 +158,7 @@ if __name__ == "__main__":
     print("Turning on Reachy")
     reachy.turn_on()
     
-    set_speed_and_torque_limits(reachy, torque_limit=TORQUE_LIMIT, speed_limit=SPEED_LIMIT)
+    set_speed_and_torque_limits(reachy, torque_limit_shoulder=TORQUE_LIMIT_SHOULDER, torque_limit_elbow=TORQUE_LIMIT_ELBOW, torque_limit_wrist=TORQUE_LIMIT_WRIST, speed_limit=SPEED_LIMIT)
 
     time.sleep(0.2)
     try :
