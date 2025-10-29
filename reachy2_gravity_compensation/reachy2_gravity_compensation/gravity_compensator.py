@@ -93,13 +93,13 @@ class GravityCompensator(Node):
             response = future.result()
             if response:
                 urdf_xml = response.values[0].string_value
-                print("URDF loaded from parameter server")
+                self.get_logger().info("URDF loaded from parameter server")
                 
                 # Robot model from parameter
                 self.robot = self.load_robot_from_param(urdf_xml)
                 self.q = pin.neutral(self.robot.model)
                 
-                print("Robot model is ready - starting gravity compensation")
+                self.get_logger().info("Robot model is ready - starting gravity compensation")
                 
         except Exception as e:
             self.get_logger().error(f"Error getting parameters: {e}")
@@ -205,6 +205,8 @@ class GravityCompensator(Node):
 
     # function that will run continously
     def update(self):
+        if self.robot is None:
+            return
     
         # Compute gravity torques
         tau = pin.computeGeneralizedGravity(self.robot.model, self.robot.data, self.q)
