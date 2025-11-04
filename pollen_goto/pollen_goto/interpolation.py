@@ -3,6 +3,7 @@
 Provides two main interpolation methods:
 - linear
 - minimum jerk
+- sinusoidal
 """
 
 from enum import Enum
@@ -80,6 +81,51 @@ def minimum_jerk(
         if t > duration:
             return goal_position
         return np.sum([c * t**i for i, c in enumerate(coeffs)], axis=0)
+
+    return f
+
+
+def sinusoidal(
+    starting_position: np.ndarray,
+    goal_position: np.ndarray,
+    duration: float,
+    starting_velocity: Optional[np.ndarray] = None,
+    starting_acceleration: Optional[np.ndarray] = None,
+    final_velocity: Optional[np.ndarray] = None,
+    final_acceleration: Optional[np.ndarray] = None,
+) -> InterpolationFunc:
+    """Compute the sinusoidal interpolation function from starting position to goal position.
+    
+    This method creates a smooth trajectory using a sinusoidal function that:
+    - Starts and ends with zero velocity
+    - Provides smooth acceleration and deceleration
+    - Is simple to compute and understand
+    
+    Args:
+        starting_position: Initial position
+        goal_position: Final position
+        duration: Total duration of the trajectory
+        starting_velocity: Not used in this implementation
+        starting_acceleration: Not used in this implementation
+        final_velocity: Not used in this implementation
+        final_acceleration: Not used in this implementation
+    
+    Returns:
+        A function that takes time as input and returns the interpolated position
+    """
+    def f(t: float) -> np.ndarray:
+        if t > duration:
+            return goal_position
+        
+        # Normalize time to [0, 1]
+        t_norm = t / duration
+        
+        # Sinusoidal interpolation: 0.5 - 0.5 * cos(π * t)
+        # This gives us a smooth S-curve from 0 to 1
+        progress = 0.5 - 0.5 * np.cos(np.pi * t_norm)
+        
+        # Interpolate between start and goal positions
+        return starting_position + (goal_position - starting_position) * progress
 
     return f
 
@@ -220,6 +266,7 @@ class JointSpaceInterpolationMode(Enum):
 
     LINEAR_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = linear
     MINIMUM_JERK_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = minimum_jerk
+    SINUSOIDAL_FUNC: Callable[[np.ndarray, np.ndarray, float], InterpolationFunc] = sinusoidal
 
 
 class CartesianSpaceInterpolationMode(Enum):
