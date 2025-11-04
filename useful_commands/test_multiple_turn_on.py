@@ -42,12 +42,14 @@ def _run_scenario_once(reachy_sdk: ReachySDK):
     r_gripper_goto_p1 = reachy_sdk.r_arm.gripper.goto(100, percentage=True)
     l_gripper_goto_p1 = reachy_sdk.l_arm.gripper.goto(100, percentage=True)
 
-    reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
-    reachy_sdk.head.r_antenna.goto(20, duration=0.5)
-    reachy_sdk.head.l_antenna.goto(20, duration=0.5)
-    reachy_sdk.head.r_antenna.goto(-20, duration=0.5)
-    l_antenna_goto_p1 = reachy_sdk.head.l_antenna.goto(-20, duration=0.5)
-    r_antenna_goto_p1 = reachy_sdk.head.r_antenna.goto(20, duration=0.5)
+    reachy_sdk.head.l_antenna.goto(0, duration=0.3)
+    reachy_sdk.head.r_antenna.goto(0, duration=0.3)
+    l_antenna_goto_p1 = reachy_sdk.head.l_antenna.goto(
+        -20, duration=1.5, interpolation_mode="linear"
+    )
+    r_antenna_goto_p1 = reachy_sdk.head.r_antenna.goto(
+        20, duration=1.5, interpolation_mode="linear"
+    )
 
     tic = time.time()
     reachy_sdk.head.goto([0, 0, -15], duration=2.0, wait=True)
