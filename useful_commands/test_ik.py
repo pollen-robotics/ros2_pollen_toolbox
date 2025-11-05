@@ -114,8 +114,11 @@ if __name__ == "__main__":
         r_target_pose = build_pose_matrix(0.4, -0.5, 0)
         l_target_pose = build_pose_matrix(0.4, 0.5, 0)
 
+        print("\nOnly right arm IK benchmark:")
         benchmark_inverse_kinematics(reachy.r_arm, r_target_pose, runs)
+        print("\nOnly left arm IK benchmark:")
         benchmark_inverse_kinematics(reachy.l_arm, l_target_pose, runs)
+        print("\nright arm + left arm IK benchmark:")
         benchmark_dual_inverse_kinematics(
             reachy.r_arm, r_target_pose, reachy.l_arm, l_target_pose, runs
         )
