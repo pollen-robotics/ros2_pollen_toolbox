@@ -29,46 +29,46 @@
 
 namespace pid_command_controller
 {
-using CmdType = std_msgs::msg::Float64MultiArray;
-using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+  using CmdType = std_msgs::msg::Float64MultiArray;
+  using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
 
-class PIDCommandController : public controller_interface::ControllerInterface
-{
-public:
-  PID_COMMAND_CONTROLLER_PUBLIC
-  PIDCommandController();
+  class PIDCommandController : public controller_interface::ControllerInterface
+  {
+  public:
+    PID_COMMAND_CONTROLLER_PUBLIC
+    PIDCommandController();
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  controller_interface::InterfaceConfiguration command_interface_configuration() const override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    controller_interface::InterfaceConfiguration command_interface_configuration() const override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  controller_interface::InterfaceConfiguration state_interface_configuration() const override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  CallbackReturn on_init() override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    CallbackReturn on_init() override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    CallbackReturn on_configure(const rclcpp_lifecycle::State &previous_state) override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
 
-  PID_COMMAND_CONTROLLER_PUBLIC
-  controller_interface::return_type update(
-    const rclcpp::Time & time, const rclcpp::Duration & period) override;
+    PID_COMMAND_CONTROLLER_PUBLIC
+    controller_interface::return_type update(
+        const rclcpp::Time &time, const rclcpp::Duration &period) override;
 
-protected:
-  std::vector<std::string> joint_names_;
+  protected:
+    std::vector<std::string> joint_names_;
 
-  realtime_tools::RealtimeBuffer<std::shared_ptr<CmdType>> rt_command_ptr_;
-  rclcpp::Subscription<CmdType>::SharedPtr joints_command_subscriber_;
+    realtime_tools::RealtimeBuffer<std::shared_ptr<CmdType>> rt_command_ptr_;
+    rclcpp::Subscription<CmdType>::SharedPtr joints_command_subscriber_;
 
-  std::string logger_name_;
-};
+    std::string logger_name_;
+  };
 
-}  // namespace pid_command_controller
+} // namespace pid_command_controller
 
-#endif  // PID_COMMAND_CONTROLLER__PID_COMMAND_CONTROLLER_HPP_
+#endif // PID_COMMAND_CONTROLLER__PID_COMMAND_CONTROLLER_HPP_
